@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+build
+*.log
+.env*
+!.env.example
+.git
+.github
+.vscode
+*.md
+!README.md
+data/*.db
+data/*.db-journal
+data/*.db-shm
+data/*.db-wal
+fly-start.sh

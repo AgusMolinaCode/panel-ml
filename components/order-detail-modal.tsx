@@ -95,14 +95,11 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
         setManualCostInput(data.cost?.manual_cost_input ?? "");
         if ((data.cost?.manual_cost_input ?? "") !== "") {
           setCostMode("manual");
-          setCostCurrency((data.cost?.manual_cost_currency as "USD" | "ARS") ?? "USD");
         } else if (data.cost?.gain != null) {
           setCostMode("manualGain");
           setGainInput(String(data.cost.gain));
-          setCostCurrency("USD");
         } else {
           setCostMode(null);
-          setCostCurrency("ARS");
         }
       } catch (err) {
         if (!cancelled) {

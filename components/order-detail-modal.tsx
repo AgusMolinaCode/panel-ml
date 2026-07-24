@@ -49,6 +49,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const [costError, setCostError] = React.useState<string | null>(null);
   const [copiedSku, setCopiedSku] = React.useState(false);
   const [costCurrency, setCostCurrency] = React.useState<"USD" | "ARS">("USD");
+  const [costMode, setCostMode] = React.useState<"product" | "manual" | "manualGain" | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -69,8 +70,12 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   }, []);
 
   React.useEffect(() => {
-    if (!order) {
+    if (!order || !open) {
       setCostData(null);
+      setGainInput("");
+      setManualCostInput("");
+      setCostInput("0");
+      setCostMode(null);
       return;
     }
     let cancelled = false;
@@ -84,9 +89,21 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
         setCostData(data.cost);
         setCostInput(data.cost ? String(data.cost.cost) : "0");
         setFeeInput(data.cost ? String(data.cost.ml_fee_pct) : String(DEFAULT_ML_FEE_PCT));
-        setGainInput(data.cost?.gain != null ? String(data.cost.gain) : "");
+        setGainInput("");
         setMlEnvioInput(data.cost?.ml_envio != null ? String(data.cost.ml_envio) : "7000");
         setWeightKgInput(data.cost?.weight_kg != null ? String(data.cost.weight_kg) : "0.5");
+        setManualCostInput(data.cost?.manual_cost_input ?? "");
+        if ((data.cost?.manual_cost_input ?? "") !== "") {
+          setCostMode("manual");
+          setCostCurrency((data.cost?.manual_cost_currency as "USD" | "ARS") ?? "USD");
+        } else if (data.cost?.gain != null) {
+          setCostMode("manualGain");
+          setGainInput(String(data.cost.gain));
+          setCostCurrency("USD");
+        } else {
+          setCostMode(null);
+          setCostCurrency("ARS");
+        }
       } catch (err) {
         if (!cancelled) {
           setCostError(err instanceof Error ? err.message : "Error");
@@ -98,7 +115,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [order]);
+  }, [order, open]);
 
   if (!order) return null;
 
@@ -123,6 +140,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const mlEnvio = parseFloat(mlEnvioInput) || 0;
   const weightKg = parseFloat(weightKgInput) || 0;
   const dollarOfficial = parseFloat(dollarOfficialInput) || DEFAULT_DOLLAR_RATE;
+  // costInput always stores ARS — on change, convert from USD if needed
   const cost = costCurrency === "USD" ? costRaw * dollarOfficial : costRaw;
 
   const saleFeeFromApi = order.sale_fee ?? null;
@@ -141,7 +159,14 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const courierCostARS = courierCostUSD * dollarOfficial;
 
   const calculatedGain = (totalAmount - (order.sale_fee ?? totalAmount * 0.19) - mlEnvio - (totalAmount * 0.0025)) - cost;
-  const gain = gainInput !== "" ? parseFloat(gainInput) : calculatedGain;
+  const manualCostRaw = parseFloat(manualCostInput) || 0;
+  const manualCostARS = costCurrency === "USD" ? manualCostRaw * dollarOfficial : manualCostRaw;
+  const gain = (() => {
+    if (costMode === null) return calculatedGain;
+    if (costMode === "manualGain") return parseFloat(gainInput) || 0;
+    if (costMode === "manual") return calculatedGain + cost - manualCostARS;
+    return calculatedGain;
+  })();
   const marginPct = totalAmount > 0 ? (gain / totalAmount) * 100 : 0;
 
   async function handleSave(): Promise<void> {
@@ -152,20 +177,38 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       const mlNeto = order.total_amount - (order.sale_fee ?? order.total_amount * 0.19) - mlEnvio - (order.total_amount * 0.0025);
       const manualCostRaw = parseFloat(manualCostInput) || 0;
       const manualCostARS = costCurrency === "USD" ? manualCostRaw * dollarOfficial : manualCostRaw;
-      const gainToSave = manualCostRaw > 0 ? mlNeto - manualCostARS : null;
+      const gainToSave = (() => {
+        if (costMode === "manualGain") return parseFloat(gainInput) || 0;
+        if (costMode === "manual") return manualCostRaw > 0 ? mlNeto - manualCostARS : null;
+        return undefined;
+      })();
+
+      const body: Record<string, unknown> = {
+        cost: costMode === "manual" ? manualCostARS : cost,
+        ml_fee_pct: feePct,
+        ml_envio: mlEnvio > 0 ? mlEnvio : null,
+        weight_kg: weightKg > 0 ? weightKg : null,
+        iibb: order.total_amount * 0.0025,
+        ml_neto: mlNeto,
+      };
+      if (costMode === null) {
+        body.gain = null;
+        body.manual_cost_input = null;
+        body.manual_cost_currency = null;
+      } else if (costMode === "manualGain") {
+        body.gain = gainToSave;
+        body.manual_cost_input = null;
+        body.manual_cost_currency = costCurrency;
+      } else if (costMode === "manual") {
+        body.gain = null;
+        body.manual_cost_input = manualCostInput || null;
+        body.manual_cost_currency = costCurrency;
+      }
 
       const res = await fetch(`/api/orders/${order.id}/cost`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cost,
-          ml_fee_pct: feePct,
-          gain: gainToSave,
-          ml_envio: mlEnvio > 0 ? mlEnvio : null,
-          weight_kg: weightKg > 0 ? weightKg : null,
-          iibb: order.total_amount * 0.0025,
-          ml_neto: mlNeto,
-        }),
+        body: JSON.stringify(body),
       });
       const data = (await res.json()) as { success?: boolean; cost?: OrderCost; error?: string };
       if (!res.ok || !data.success) {
@@ -179,7 +222,19 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       setGainInput(saved?.gain != null ? String(saved.gain) : "");
       setMlEnvioInput(saved?.ml_envio != null ? String(saved.ml_envio) : "");
       setWeightKgInput(saved?.weight_kg != null ? String(saved.weight_kg) : "");
-      setManualCostInput("");
+      setManualCostInput(saved?.manual_cost_input ?? "");
+      if (saved?.manual_cost_currency) {
+        setCostCurrency(saved.manual_cost_currency as "USD" | "ARS");
+      } else {
+        setCostCurrency("ARS");
+      }
+      if (saved?.gain != null) {
+        setCostMode("manualGain");
+      } else if ((saved?.manual_cost_input ?? "") !== "") {
+        setCostMode("manual");
+      } else {
+        setCostMode(null);
+      }
       window.dispatchEvent(new CustomEvent("panel-ml:gains-changed", { detail: saved }));
       onOpenChange(false);
     } catch (err) {
@@ -202,6 +257,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       setWeightKgInput("0.5");
       setGainInput("");
       setManualCostInput("");
+      setCostMode(null);
       window.dispatchEvent(new CustomEvent("panel-ml:gains-changed", { detail: order.id }));
     } catch (err) {
       setCostError(err instanceof Error ? err.message : "Error");
@@ -299,9 +355,22 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                     step="any"
                     min="0"
                     value={costInput}
-                    onChange={(e) => setCostInput(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === "" || e.target.value === "0") {
+                        setCostMode(null);
+                        setCostInput(e.target.value);
+                        setManualCostInput("");
+                        setGainInput("");
+                      } else {
+                        setCostMode(null);
+                        setCostInput(e.target.value);
+                        setManualCostInput("");
+                        setGainInput("");
+                      }
+                    }}
+                    disabled={costMode !== null && costMode !== "product"}
                     placeholder="0"
-                    className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -359,9 +428,22 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                     step="any"
                     min="0"
                     value={manualCostInput}
-                    onChange={(e) => setManualCostInput(e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === "") {
+                        setCostMode(null);
+                        setManualCostInput("");
+                        setCostInput("0");
+                        setGainInput("");
+                      } else {
+                        setCostMode("manual");
+                        setManualCostInput(e.target.value);
+                        setCostInput("0");
+                        setGainInput("");
+                      }
+                    }}
+                    disabled={costMode !== null && costMode !== "manual"}
                     placeholder="NETO ML - este valor = Ganancia"
-                    className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </div>
                 <p className="text-[10px] text-muted-foreground">
@@ -377,13 +459,25 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                   type="number"
                   step="any"
                   value={gainInput}
-                  onChange={(e) => setGainInput(e.target.value)}
-                  disabled={parseFloat(manualCostInput) > 0}
-                  placeholder={parseFloat(manualCostInput) > 0 ? "Deshabilitado (usás el campo de arriba)" : "Dejá vacío para calcular automáticamente"}
+                  onChange={(e) => {
+                    if (e.target.value === "") {
+                      setCostMode(null);
+                      setGainInput("");
+                      setCostInput("0");
+                      setManualCostInput("");
+                    } else {
+                      setCostMode("manualGain");
+                      setGainInput(e.target.value);
+                      setCostInput("0");
+                      setManualCostInput("");
+                    }
+                  }}
+                  disabled={costMode !== null && costMode !== "manualGain"}
+                  placeholder={costMode !== null ? "Ganancia fija" : "Ganancia que quieras"}
                   className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1.5 pr-12 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  {parseFloat(manualCostInput) > 0 ? "Usá el campo de arriba para calcular con tu costo" : "Si completás este campo, se usa este valor en lugar del calculado automáticamente"}
+                  {costMode !== "manualGain" ? "Completá uno de los campos de arriba" : "Se usa este valor como ganancia fija"}
                 </p>
               </div>
 

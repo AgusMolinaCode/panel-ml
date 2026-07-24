@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
       return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
     }
 
-    let body: { cost?: number; ml_fee_pct?: number; notes?: string; logistic_mode?: "iva" | "kilos"; weight_kg?: number | null; gain?: number | null; ml_envio?: number | null; ml_neto?: number | null; iibb?: number | null; row_color?: string | null };
+    let body: { cost?: number; ml_fee_pct?: number; notes?: string; logistic_mode?: "iva" | "kilos"; weight_kg?: number | null; gain?: number | null; ml_envio?: number | null; ml_neto?: number | null; iibb?: number | null; row_color?: string | null; manual_cost_input?: string | null; manual_cost_currency?: string | null };
     try {
       body = (await req.json()) as typeof body;
     } catch {
@@ -56,6 +56,8 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
     const mlNeto = body.ml_neto != null ? Number(body.ml_neto) : null;
     const iibb = body.iibb != null ? Number(body.iibb) : null;
     const rowColor = body.row_color ?? null;
+    const manualCostInput = body.manual_cost_input ?? null;
+    const manualCostCurrency = body.manual_cost_currency ?? null;
 
     if (Number.isNaN(cost) || cost < 0) {
       return NextResponse.json({ error: "Invalid cost" }, { status: 400 });
@@ -73,10 +75,10 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
       return NextResponse.json({ error: "Invalid ml_envio" }, { status: 400 });
     }
 
-    upsertOrderCost(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor);
+    upsertOrderCost(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency);
     return NextResponse.json({
       success: true,
-      cost: { order_id: orderId, cost, ml_fee_pct: mlFeePct, notes, logistic_mode: logisticMode, weight_kg: weightKg, gain, ml_envio: mlEnvio, ml_neto: mlNeto, iibb, row_color: rowColor, updated_at: Date.now() },
+      cost: { order_id: orderId, cost, ml_fee_pct: mlFeePct, notes, logistic_mode: logisticMode, weight_kg: weightKg, gain, ml_envio: mlEnvio, ml_neto: mlNeto, iibb, row_color: rowColor, manual_cost_input: manualCostInput, manual_cost_currency: manualCostCurrency, updated_at: Date.now() },
     });
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {

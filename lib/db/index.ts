@@ -82,6 +82,12 @@ function runMigrations(db: Database.Database): void {
   if (!hasCost("row_color")) {
     db.exec("ALTER TABLE order_costs ADD COLUMN row_color TEXT");
   }
+  if (!hasCost("manual_cost_input")) {
+    db.exec("ALTER TABLE order_costs ADD COLUMN manual_cost_input TEXT");
+  }
+  if (!hasCost("manual_cost_currency")) {
+    db.exec("ALTER TABLE order_costs ADD COLUMN manual_cost_currency TEXT");
+  }
 }
 
 export function getDb(): Database.Database {
@@ -329,12 +335,14 @@ export function upsertOrderCost(
   mlEnvio: number | null = null,
   mlNeto: number | null = null,
   iibb: number | null = null,
-  rowColor: string | null = null
+  rowColor: string | null = null,
+  manualCostInput: string | null = null,
+  manualCostCurrency: string | null = null
 ): void {
   const db = getDb();
   db.prepare(
-    `INSERT INTO order_costs (order_id, cost, ml_fee_pct, notes, logistic_mode, weight_kg, gain, ml_envio, ml_neto, iibb, row_color, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO order_costs (order_id, cost, ml_fee_pct, notes, logistic_mode, weight_kg, gain, ml_envio, ml_neto, iibb, row_color, manual_cost_input, manual_cost_currency, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(order_id) DO UPDATE SET
        cost = excluded.cost,
        ml_fee_pct = excluded.ml_fee_pct,
@@ -346,8 +354,10 @@ export function upsertOrderCost(
        ml_neto = excluded.ml_neto,
        iibb = excluded.iibb,
        row_color = excluded.row_color,
+       manual_cost_input = excluded.manual_cost_input,
+       manual_cost_currency = excluded.manual_cost_currency,
        updated_at = excluded.updated_at`
-  ).run(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, Date.now());
+  ).run(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency, Date.now());
 }
 
 export function deleteOrderCost(orderId: number): void {

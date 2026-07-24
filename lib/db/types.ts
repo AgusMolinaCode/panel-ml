@@ -133,6 +133,8 @@ export interface OrderCost {
   ml_neto?: number | null;
   iibb?: number | null;
   row_color?: string | null;
+  manual_cost_input?: string | null;
+  manual_cost_currency?: string | null;
   updated_at: number;
 }
 

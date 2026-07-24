@@ -35,6 +35,8 @@ type CostData = {
   ml_envio: number | null;
   ml_neto: number | null;
   iibb: number | null;
+  manual_cost_input?: string | null;
+  manual_cost_currency?: string | null;
 };
 
 interface OrdersResult {
@@ -434,17 +436,13 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
               ) : (
                 data?.orders.map((order) => {
                   const cost = costMap[order.id];
-                  const netSale = order.total_amount / 1.21;
-                  const mlFeeAmt = order.sale_fee != null
+                  const saleFee = order.sale_fee != null
                     ? order.sale_fee
-                    : order.total_amount * ((cost?.ml_fee_pct ?? 15) / 100);
-                  const percepcion1 = order.total_amount * 0.01;
-                  const percepcion3 = mlFeeAmt * 0.03;
-                  const iibb = netSale * 0.18;
+                    : order.total_amount * 0.19;
                   const mlEnvio = cost?.ml_envio ?? 0;
-                  const cuotasCost = order.total_amount * 0.06;
-                  const courierARS = (cost?.weight_kg ?? 0) * USD_PER_KG * DEFAULT_DOLLAR_RATE;
-                  const calculatedGain = netSale - percepcion1 - percepcion3 - iibb - mlFeeAmt - mlEnvio - cuotasCost - courierARS - (cost?.cost ?? 0);
+                  const iibb = order.total_amount * 0.0025;
+                  const netSale = order.total_amount - saleFee - mlEnvio - iibb;
+                  const calculatedGain = netSale - (cost?.cost ?? 0);
                   const gain = cost?.gain != null
                     ? cost.gain
                     : cost

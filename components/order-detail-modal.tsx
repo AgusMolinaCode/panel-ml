@@ -48,7 +48,6 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const [manualCostInput, setManualCostInput] = React.useState("");
   const [costError, setCostError] = React.useState<string | null>(null);
   const [copiedSku, setCopiedSku] = React.useState(false);
-  const [costCurrency, setCostCurrency] = React.useState<"USD" | "ARS">("USD");
   const [costMode, setCostMode] = React.useState<"product" | "manual" | "manualGain" | null>(null);
 
   React.useEffect(() => {
@@ -87,7 +86,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
         const data = (await res.json()) as { cost: OrderCost | null };
         if (cancelled) return;
         setCostData(data.cost);
-        setCostInput(data.cost ? String(data.cost.cost) : "0");
+        setCostInput(data.cost ? String(data.cost.cost / dollarOfficial) : "0");
         setFeeInput(data.cost ? String(data.cost.ml_fee_pct) : String(DEFAULT_ML_FEE_PCT));
         setGainInput("");
         setMlEnvioInput(data.cost?.ml_envio != null ? String(data.cost.ml_envio) : "7000");
@@ -137,8 +136,6 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const mlEnvio = parseFloat(mlEnvioInput) || 0;
   const weightKg = parseFloat(weightKgInput) || 0;
   const dollarOfficial = parseFloat(dollarOfficialInput) || DEFAULT_DOLLAR_RATE;
-  // costInput always stores ARS — on change, convert from USD if needed
-  const cost = costCurrency === "USD" ? costRaw * dollarOfficial : costRaw;
 
   const saleFeeFromApi = order.sale_fee ?? null;
   const mlFeeAmount =
@@ -147,33 +144,55 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       : order.total_amount * (feePct / 100);
 
   const totalAmount = order.total_amount;
+  // Precio neto sin IVA (Precio de venta / 1.21)
   const netSalePrice = totalAmount / 1.21;
-  const percepcion1 = totalAmount * 0.01;
+
+  // Costos en ARS
+  const productCostARS = costRaw * dollarOfficial;
+  const percepcion1 = netSalePrice * 0.01;
   const percepcion3 = mlFeeAmount * 0.03;
-  const iibb = netSalePrice * 0.18;
-  const cuotasCost = totalAmount * 0.06;
+  const iibb = netSalePrice * 0.0025;
+  const importRights18 = netSalePrice * 0.18;
+  const cuotasCost = netSalePrice * 0.06;
   const courierCostUSD = weightKg * USD_PER_KG;
   const courierCostARS = courierCostUSD * dollarOfficial;
 
-  const calculatedGain = (totalAmount - (order.sale_fee ?? totalAmount * 0.19) - mlEnvio - (totalAmount * 0.0025)) - cost;
+  // Ganancia calculada: NETO - todos los componentes
+  const calculatedGain =
+    netSalePrice
+    - mlFeeAmount
+    - cuotasCost
+    - percepcion1
+    - percepcion3
+    - iibb
+    - importRights18
+    - productCostARS
+    - mlEnvio
+    - courierCostARS;
+
   const manualCostRaw = parseFloat(manualCostInput) || 0;
-  const manualCostARS = costCurrency === "USD" ? manualCostRaw * dollarOfficial : manualCostRaw;
+  const manualCostARS = manualCostRaw * dollarOfficial;
   const gain = (() => {
     if (costMode === null) return calculatedGain;
     if (costMode === "manualGain") return parseFloat(gainInput) || 0;
-    if (costMode === "manual") return calculatedGain + cost - manualCostARS;
+    if (costMode === "manual") {
+      // En modo manual: NETO ML - costo manual
+      return netSalePrice - mlFeeAmount - cuotasCost - percepcion1 - percepcion3 - iibb - importRights18 - manualCostARS - mlEnvio - courierCostARS;
+    }
     return calculatedGain;
   })();
-  const marginPct = totalAmount > 0 ? (gain / totalAmount) * 100 : 0;
+
+  // Margen sobre precio neto
+  const marginPct = netSalePrice > 0 ? (gain / netSalePrice) * 100 : 0;
 
   async function handleSave(): Promise<void> {
     if (!order) return;
     setSaving(true);
     setCostError(null);
     try {
-      const mlNeto = order.total_amount - (order.sale_fee ?? order.total_amount * 0.19) - mlEnvio - (order.total_amount * 0.0025);
+      const mlNeto = netSalePrice - mlFeeAmount - mlEnvio - (netSalePrice * 0.0025);
       const manualCostRaw = parseFloat(manualCostInput) || 0;
-      const manualCostARS = costCurrency === "USD" ? manualCostRaw * dollarOfficial : manualCostRaw;
+      const manualCostARS = manualCostRaw * dollarOfficial;
       const gainToSave = (() => {
         if (costMode === "manualGain") return parseFloat(gainInput) || 0;
         if (costMode === "manual") return manualCostRaw > 0 ? mlNeto - manualCostARS : null;
@@ -181,7 +200,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       })();
 
       const body: Record<string, unknown> = {
-        cost: costMode === "manual" ? manualCostARS : cost,
+        cost: costMode === "manual" ? manualCostARS : productCostARS,
         ml_fee_pct: feePct,
         ml_envio: mlEnvio > 0 ? mlEnvio : null,
         weight_kg: weightKg > 0 ? weightKg : null,
@@ -195,11 +214,11 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       } else if (costMode === "manualGain") {
         body.gain = gainToSave;
         body.manual_cost_input = null;
-        body.manual_cost_currency = costCurrency;
+        body.manual_cost_currency = "USD";
       } else if (costMode === "manual") {
         body.gain = null;
         body.manual_cost_input = manualCostInput || null;
-        body.manual_cost_currency = costCurrency;
+        body.manual_cost_currency = "USD";
       }
 
       const res = await fetch(`/api/orders/${order.id}/cost`, {
@@ -214,17 +233,12 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       }
       const saved = data.cost ?? null;
       setCostData(saved);
-      setCostInput(saved ? String(saved.cost) : "0");
+      setCostInput(saved ? String(saved.cost / dollarOfficial) : "0");
       setFeeInput(saved ? String(saved.ml_fee_pct) : String(DEFAULT_ML_FEE_PCT));
       setGainInput(saved?.gain != null ? String(saved.gain) : "");
       setMlEnvioInput(saved?.ml_envio != null ? String(saved.ml_envio) : "");
       setWeightKgInput(saved?.weight_kg != null ? String(saved.weight_kg) : "");
       setManualCostInput(saved?.manual_cost_input ?? "");
-      if (saved?.manual_cost_currency) {
-        setCostCurrency(saved.manual_cost_currency as "USD" | "ARS");
-      } else {
-        setCostCurrency("ARS");
-      }
       if (saved?.gain != null) {
         setCostMode("manualGain");
       } else if ((saved?.manual_cost_input ?? "") !== "") {
@@ -338,15 +352,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Costo de producto (neto sin IVA)</label>
                 <div className="flex items-center gap-2">
-                  <Select value={costCurrency} onValueChange={(v) => setCostCurrency(v as "USD" | "ARS")}>
-                    <SelectTrigger className="h-9 w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="ARS">ARS</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <span className="inline-flex items-center rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">USD</span>
                   <input
                     type="number"
                     step="any"
@@ -411,15 +417,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                   Tu costo del producto (para calcular ganancia)
                 </label>
                 <div className="flex items-center gap-2">
-                  <Select value={costCurrency} onValueChange={(v) => setCostCurrency(v as "USD" | "ARS")}>
-                    <SelectTrigger className="h-9 w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="ARS">ARS</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <span className="inline-flex items-center rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">USD</span>
                   <input
                     type="number"
                     step="any"
@@ -512,11 +510,12 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                 totalAmount={totalAmount}
                 netSalePrice={netSalePrice}
                 ivaDebit={totalAmount - netSalePrice}
-                costNet={cost}
+                costNet={productCostARS}
                 mlFeeAmount={mlFeeAmount}
                 percepcion1={percepcion1}
                 percepcion3={percepcion3}
                 iibb={iibb}
+                importRights18={importRights18}
                 mlEnvio={mlEnvio}
                 cuotasCost={cuotasCost}
                 courierCostUSD={courierCostUSD}
@@ -577,6 +576,7 @@ function Breakdown({
   percepcion1,
   percepcion3,
   iibb,
+  importRights18,
   mlEnvio,
   cuotasCost,
   courierCostUSD,
@@ -595,6 +595,7 @@ function Breakdown({
   percepcion1: number;
   percepcion3: number;
   iibb: number;
+  importRights18: number;
   mlEnvio: number;
   cuotasCost: number;
   courierCostUSD: number;
@@ -619,7 +620,8 @@ function Breakdown({
       <Row label="Costo por ofrecer cuotas (6%)" value={`− ${formatMoney(cuotasCost, currency)}`} muted />
       <Row label="Percepción IVA (1%)" value={`− ${formatMoney(percepcion1, currency)}`} muted />
       <Row label="Percepción s/comisión (3%)" value={`− ${formatMoney(percepcion3, currency)}`} muted />
-      <Row label="Derechos de Importación (18%)" value={`− ${formatMoney(iibb, currency)}`} muted />
+      <Row label="IIBB (0.25%)" value={`− ${formatMoney(iibb, currency)}`} muted />
+      <Row label="Derechos de Importación (18%)" value={`− ${formatMoney(importRights18, currency)}`} muted />
       <Row label="Costo producto" value={`− ${formatMoney(costNet, currency)}`} muted />
       <Row label="Envío ML" value={`− ${formatMoney(mlEnvio, currency)}`} muted />
       <Row

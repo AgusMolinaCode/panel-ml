@@ -107,3 +107,21 @@ CREATE TABLE IF NOT EXISTS order_costs (
   row_color TEXT,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
+
+-- Monthly fixed expenses (gastos fijos mensuales)
+CREATE TABLE IF NOT EXISTS monthly_expenses (
+  id TEXT PRIMARY KEY,
+  month TEXT NOT NULL,
+  concepto TEXT NOT NULL DEFAULT '',
+  monto REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+
+CREATE INDEX IF NOT EXISTS idx_monthly_expenses_month ON monthly_expenses(month);
+
+CREATE TRIGGER IF NOT EXISTS trg_monthly_expenses_updated
+AFTER UPDATE ON monthly_expenses
+BEGIN
+  UPDATE monthly_expenses SET updated_at = unixepoch() * 1000 WHERE id = NEW.id;
+END;

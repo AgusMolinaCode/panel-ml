@@ -138,5 +138,14 @@ export interface OrderCost {
   updated_at: number;
 }
 
+export interface MonthlyExpense {
+  id: string;
+  month: string;
+  concepto: string;
+  monto: number;
+  created_at?: number;
+  updated_at?: number;
+}
+
 // Helper type for SQLite row mapping
 export type DbInstance = Database.Database;

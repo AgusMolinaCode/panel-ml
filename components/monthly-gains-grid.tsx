@@ -194,20 +194,27 @@ export function MonthlyGainsGrid() {
 
         for (const order of allOrders) {
           const cost = costsData[order.id];
-          const saleFee = order.sale_fee ?? order.total_amount * 0.19;
+          const totalAmount = Number(order.total_amount) || 0;
+          const saleFee = order.sale_fee ?? totalAmount * 0.19;
           const envio = cost?.ml_envio ?? 0;
-          const iibb = order.total_amount * 0.0025;
-          const netSale = order.total_amount - saleFee - envio - iibb;
+          const iibb = totalAmount * 0.0025;
+          const netSale = totalAmount - saleFee - envio - iibb;
           const calculatedGain = netSale - (cost?.cost ?? 0);
           const gain = cost?.gain != null ? cost.gain : cost ? calculatedGain : null;
 
-          const monthStr = new Date(order.date_created).toISOString().slice(0, 7);
+          const monthStr = new Date(Number(order.date_created) || 0).toISOString().slice(0, 7);
           if (!monthMap.has(monthStr)) {
-            monthMap.set(monthStr, { month: monthStr, orderCount: 0, totalSales: 0, totalCosts: 0, totalGain: 0 });
+            monthMap.set(monthStr, {
+              month: monthStr,
+              orderCount: 0,
+              totalSales: 0,
+              totalCosts: 0,
+              totalGain: 0,
+            });
           }
           const m = monthMap.get(monthStr)!;
           m.orderCount++;
-          m.totalSales += order.total_amount;
+          m.totalSales += totalAmount;
           m.totalCosts += cost?.cost ?? 0;
           if (gain != null) m.totalGain += gain;
         }

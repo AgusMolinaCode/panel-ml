@@ -88,6 +88,17 @@ function runMigrations(db: Database.Database): void {
   if (!hasCost("manual_cost_currency")) {
     db.exec("ALTER TABLE order_costs ADD COLUMN manual_cost_currency TEXT");
   }
+
+  const expenseColumns = db.prepare("PRAGMA table_info(monthly_expenses)").all() as Array<{ name: string }>;
+  const hasExpense = (col: string) => expenseColumns.some((c) => c.name === col);
+  if (!hasExpense("created_at")) {
+    db.exec("ALTER TABLE monthly_expenses ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0");
+    db.exec("UPDATE monthly_expenses SET created_at = unixepoch() * 1000 WHERE created_at = 0");
+  }
+  if (!hasExpense("updated_at")) {
+    db.exec("ALTER TABLE monthly_expenses ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0");
+    db.exec("UPDATE monthly_expenses SET updated_at = unixepoch() * 1000 WHERE updated_at = 0");
+  }
 }
 
 export function getDb(): Database.Database {
@@ -363,6 +374,27 @@ export function upsertOrderCost(
 export function deleteOrderCost(orderId: number): void {
   const db = getDb();
   db.prepare("DELETE FROM order_costs WHERE order_id = ?").run(orderId);
+}
+
+// ---------- Monthly Expenses ----------
+
+export function getMonthlyExpenses(month: string): import("./types").MonthlyExpense[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM monthly_expenses WHERE month = ? ORDER BY created_at ASC")
+    .all(month) as import("./types").MonthlyExpense[];
+}
+
+export function upsertMonthlyExpense(expense: import("./types").MonthlyExpense): void {
+  const db = getDb();
+  db.prepare(
+    "INSERT OR REPLACE INTO monthly_expenses (id, month, concepto, monto) VALUES (?, ?, ?, ?)"
+  ).run(expense.id, expense.month, expense.concepto, expense.monto);
+}
+
+export function deleteMonthlyExpense(id: string): void {
+  const db = getDb();
+  db.prepare("DELETE FROM monthly_expenses WHERE id = ?").run(id);
 }
 
 // ---------- Shipments ----------

@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { endOfDay, startOfMonth } from "date-fns";
 import { Plus, Trash2, Wallet } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { getRangeFromMode } from "./monthly-gains-grid";
 
 interface Expense {
   id: string;
@@ -71,9 +71,7 @@ function navigateMonth(monthStr: string, direction: "prev" | "next"): string {
 
 export function MonthlyExpenses() {
   const [monthKey, setMonthKey] = React.useState<string>(getCurrentMonthKey);
-  const [year, month] = monthKey.split("-").map(Number);
-  const fromMs = startOfMonth(new Date(year, month - 1, 1)).getTime();
-  const toMs = endOfDay(new Date(year, month - 1, 1)).getTime();
+  const { fromMs, toMs } = getRangeFromMode("month");
 
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [monthlyGain, setMonthlyGain] = React.useState<number | null>(null);
@@ -145,7 +143,7 @@ export function MonthlyExpenses() {
         const costsRes = await fetch(`/api/orders/costs?ids=${orderIds.join(",")}`);
         const costsData = (await costsRes.json()) as Record<number, CostData>;
 
-        let totalGain = 0;
+        const monthGainMap = new Map<string, number>();
         for (const order of allOrders) {
           const cost = costsData[order.id];
           const totalAmount = Number(order.total_amount) || 0;
@@ -155,10 +153,13 @@ export function MonthlyExpenses() {
           const netSale = totalAmount - saleFee - envio - iibb;
           const calculatedGain = netSale - (cost?.cost ?? 0);
           const gain = cost?.gain != null ? cost.gain : cost ? calculatedGain : null;
-          if (gain != null) totalGain += gain;
+
+          const monthStr = new Date(Number(order.date_created) || 0).toISOString().slice(0, 7);
+          if (!monthGainMap.has(monthStr)) monthGainMap.set(monthStr, 0);
+          if (gain != null) monthGainMap.set(monthStr, (monthGainMap.get(monthStr) ?? 0) + gain);
         }
 
-        if (!cancelled) setMonthlyGain(totalGain);
+        if (!cancelled) setMonthlyGain(monthGainMap.get(monthKey) ?? 0);
       } catch (err) {
         console.error("Failed to load monthly gain:", err);
         if (!cancelled) setMonthlyGain(0);

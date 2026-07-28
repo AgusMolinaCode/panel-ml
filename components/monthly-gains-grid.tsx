@@ -8,9 +8,9 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type RangeMode = "day" | "week" | "month" | "2months" | "3months";
+export type RangeMode = "day" | "week" | "month" | "2months" | "3months";
 
-function getRangeFromMode(mode: RangeMode): { fromMs: number; toMs: number } {
+export function getRangeFromMode(mode: RangeMode): { fromMs: number; toMs: number } {
   const now = new Date();
   const toMs = endOfDay(now).getTime();
   switch (mode) {

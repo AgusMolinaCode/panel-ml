@@ -350,7 +350,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
           <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Costo de producto (neto sin IVA)</label>
+                <label className="text-xs font-medium text-muted-foreground">Costo FOB del producto (USD neto)</label>
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">USD</span>
                   <input
@@ -376,6 +376,9 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                     className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Ingresá el valor FOB en USD sin IVA (el IVA de importación computa como Crédito Fiscal y no incrementa el costo).
+                </p>
               </div>
               <NumberField
                 label="Costo de Envío ML (ARS)"
@@ -414,7 +417,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">
-                  Tu costo del producto (para calcular ganancia)
+                  Costo FOB del producto (USD neto)
                 </label>
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground">USD</span>
@@ -442,7 +445,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                   />
                 </div>
                 <p className="text-[10px] text-muted-foreground">
-                  Al guardar: NETO ML − este valor = Ganancia
+                  Ingresá el valor FOB en USD sin IVA (el IVA de importación computa como Crédito Fiscal y no incrementa el costo).
                 </p>
               </div>
 

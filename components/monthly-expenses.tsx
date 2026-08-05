@@ -6,7 +6,6 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { getRangeFromMode } from "./monthly-gains-grid";
 
 interface Expense {
   id: string;
@@ -69,9 +68,19 @@ function navigateMonth(monthStr: string, direction: "prev" | "next"): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function getMonthRangeFromKey(monthKey: string): { fromMs: number; toMs: number } {
+  const [year, month] = monthKey.split("-").map(Number);
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month - 1 + 1, 0, 23, 59, 59, 999);
+  return {
+    fromMs: startDate.getTime(),
+    toMs: endDate.getTime(),
+  };
+}
+
 export function MonthlyExpenses() {
   const [monthKey, setMonthKey] = React.useState<string>(getCurrentMonthKey);
-  const { fromMs, toMs } = getRangeFromMode("month");
+  const { fromMs, toMs } = getMonthRangeFromKey(monthKey);
 
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [monthlyGain, setMonthlyGain] = React.useState<number | null>(null);

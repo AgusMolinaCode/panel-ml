@@ -8,6 +8,7 @@ import { OrdersTable } from "@/components/orders-table";
 import { DashboardClient } from "@/components/dashboard-client";
 import { MonthlyGainsGrid } from "@/components/monthly-gains-grid";
 import { MonthlyExpenses } from "@/components/monthly-expenses";
+import { PriceCalculator } from "@/components/price-calculator";
 import { BarChart3, ShoppingCart, Wallet } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +100,13 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
       <div className="mt-6 animate-fade-in-up max-w-xl">
         <Suspense fallback={<div className="h-48 animate-pulse rounded-lg bg-muted" />}>
           <MonthlyExpenses />
+        </Suspense>
+      </div>
+
+      {/* Price Calculator */}
+      <div className="mt-6 animate-fade-in-up max-w-3xl">
+        <Suspense fallback={<div className="h-48 animate-pulse rounded-lg bg-muted" />}>
+          <PriceCalculator />
         </Suspense>
       </div>
 

@@ -343,9 +343,8 @@ export function PriceCalculator() {
                     <div className="border-t border-border/60 pt-1.5">
                       <BreakdownRow label="Fracción retenida" value={`${(mlResult.retained_fraction * 100).toFixed(2)}%`} />
                       <BreakdownRow label="IVA débito" value={formatMoney(mlResult.iva_debito_ars, "ARS")} isNegative />
-                      <BreakdownRow label="Comisión ML 24.2%" value={formatMoney(mlResult.comision_ml_ars, "ARS")} isNegative />
+                      <BreakdownRow label="Comisión ML 21%" value={formatMoney(mlResult.comision_ml_ars, "ARS")} isNegative />
                       <BreakdownRow label="Percep. s/comisión 3%" value={formatMoney(mlResult.percep_comision_ars, "ARS")} isNegative />
-                      <BreakdownRow label="Cuotas 6%" value={formatMoney(mlResult.cuotas_ars, "ARS")} isNegative />
                       <BreakdownRow label="Percep. IVA 1%" value={formatMoney(mlResult.percep_iva_ars, "ARS")} isNegative />
                       <BreakdownRow label="IIBB 0.25%" value={formatMoney(mlResult.iibb_ars, "ARS")} isNegative />
                     </div>

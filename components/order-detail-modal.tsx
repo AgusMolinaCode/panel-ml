@@ -181,7 +181,6 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const percepcion3 = breakdown.percepcionComision;
   const iibb = breakdown.iibb;
   const importRights = breakdown.derechosImport;
-  const cuotasCost = breakdown.cuotasCost;
   const courierCostUSD = breakdown.courierCostUSD;
   const courierCostARS = breakdown.courierCostARS;
 
@@ -525,7 +524,6 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                 iibb={iibb}
                 importRights18={importRights}
                 mlEnvio={mlEnvio}
-                cuotasCost={cuotasCost}
                 courierCostUSD={courierCostUSD}
                 courierCostARS={courierCostARS}
                 weightKg={weightKg}
@@ -586,7 +584,6 @@ function Breakdown({
   iibb,
   importRights18,
   mlEnvio,
-  cuotasCost,
   courierCostUSD,
   courierCostARS,
   weightKg,
@@ -605,7 +602,6 @@ function Breakdown({
   iibb: number;
   importRights18: number;
   mlEnvio: number;
-  cuotasCost: number;
   courierCostUSD: number;
   courierCostARS: number;
   weightKg: number;
@@ -625,7 +621,6 @@ function Breakdown({
       ) : (
         <Row label="Comisión ML" value={`− ${formatMoney(mlFeeAmount, currency)}`} muted />
       )}
-      <Row label="Costo por ofrecer cuotas (6%)" value={`− ${formatMoney(cuotasCost, currency)}`} muted />
       <Row label="Percepción IVA (1%)" value={`− ${formatMoney(percepcion1, currency)}`} muted />
       <Row label="Percepción s/comisión (3%)" value={`− ${formatMoney(percepcion3, currency)}`} muted />
       <Row label="IIBB (0.25%)" value={`− ${formatMoney(iibb, currency)}`} muted />

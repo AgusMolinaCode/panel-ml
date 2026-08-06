@@ -14,14 +14,11 @@ export const MARGIN_MULTIPLIER = 1.175;
 /** Costo de flete/courier en USD por kg */
 export const SHIPPING_COST_PER_KG = 18;
 
-/** Comisión base de ML (sin IVA). El valor con IVA 21% es 24.2% */
-export const ML_COMISION_RATE = 0.2;
+/** Comisión base de ML (sin IVA). El valor con IVA 21% es 21% (incluye cuotas, REMOVIDO el 6% separate) */
+export const ML_COMISION_RATE = 0.17355;
 
 /** IVA general */
 export const IVA_RATE = 0.21;
-
-/** Costo financiero por cuotas (sobre el neto real) */
-export const CUOTAS_RATE = 0.06;
 
 /** Percepción de IVA (sobre el neto real) */
 export const PERCEP_IVA_RATE = 0.01;
@@ -99,7 +96,6 @@ export interface MLPriceBreakdown {
   iva_debito_ars: number;
   comision_ml_ars: number;
   percep_comision_ars: number;
-  cuotas_ars: number;
   percep_iva_ars: number;
   iibb_ars: number;
   envio_ml_ars: number;
@@ -127,7 +123,7 @@ function calculateBreakdown(
   const ivaFraccion = IVA_RATE / (1 + IVA_RATE);
   const comisionFraccion = ML_COMISION_RATE * (1 + IVA_RATE);
   const baseNetoReal = 1 - ivaFraccion - comisionFraccion;
-  const gastosNetoFraccion = (CUOTAS_RATE + PERCEP_IVA_RATE + IIBB_RATE) * baseNetoReal;
+  const gastosNetoFraccion = (PERCEP_IVA_RATE + IIBB_RATE) * baseNetoReal;
   const percepComisionFraccion = PERCEP_COMISION_RATE * comisionFraccion;
 
   const retained =
@@ -150,7 +146,6 @@ function calculateBreakdown(
   const comisionMLARS = finalPriceARS * comisionFraccion;
   const percepComisionARS = comisionMLARS * PERCEP_COMISION_RATE;
   const baseNetoARS = finalPriceARS * baseNetoReal;
-  const cuotasARS = baseNetoARS * CUOTAS_RATE;
   const percepIvaARS = baseNetoARS * PERCEP_IVA_RATE;
   const iibbARS = baseNetoARS * IIBB_RATE;
 
@@ -159,7 +154,6 @@ function calculateBreakdown(
     ivaDebitoARS -
     comisionMLARS -
     percepComisionARS -
-    cuotasARS -
     percepIvaARS -
     iibbARS -
     ENVIO_ML_ARS;
@@ -179,7 +173,6 @@ function calculateBreakdown(
     iva_debito_ars: Math.round(ivaDebitoARS),
     comision_ml_ars: Math.round(comisionMLARS),
     percep_comision_ars: Math.round(percepComisionARS),
-    cuotas_ars: Math.round(cuotasARS),
     percep_iva_ars: Math.round(percepIvaARS),
     iibb_ars: Math.round(iibbARS),
     envio_ml_ars: ENVIO_ML_ARS,

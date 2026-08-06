@@ -8,8 +8,7 @@
  *
  *   neto_venta   = total / 1.21            (separamos el IVA débito → AFIP)
  *   ganancia     = neto_venta
- *                  − comisión ML           (sale_fee API, o % fallback sobre bruto)
- *                  − cuotas 6%             (sobre neto)
+ *                  − comisión ML           (sale_fee API, o % fallback = 21%)
  *                  − percepción IVA 1%     (sobre neto)
  *                  − percepción s/comisión 3%
  *                  − IIBB 0.25%            (sobre neto)
@@ -17,6 +16,8 @@
  *                  − costo producto (ARS)
  *                  − envío ML (ARS)
  *                  − courier (kg × USD/kg × dólar)
+ *
+ * Nota: Cuotas 6% ya está incluido en el 21% de comisión ML (no se descuenta separately).
  */
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -27,14 +28,13 @@ export const DOLLAR_BLUE_DEFAULT = 1650;
 /** Costo courier por kg en USD (doc: SHIPPING_COST_PER_KG) */
 export const COURIER_USD_PER_KG = 18;
 
-/** Comisión ML fallback cuando la API no trae sale_fee: 20% + IVA 21% = 24.2% (doc) */
-export const DEFAULT_ML_FEE_PCT = 24.2;
+/** Comisión ML fallback cuando la API no trae sale_fee: 21% (incluye cuotas, alineado con price.js) */
+export const DEFAULT_ML_FEE_PCT = 21;
 
 /** Envío ML por defecto a cargo del vendedor (ARS) */
 export const DEFAULT_ML_ENVIO = 7000;
 
 export const IVA_RATE = 0.21;
-export const CUOTAS_RATE = 0.06;
 export const PERCEPCION_IVA_RATE = 0.01;
 export const PERCEPCION_COMISION_RATE = 0.03;
 export const IIBB_RATE = 0.0025;
@@ -76,7 +76,6 @@ export interface GainBreakdown {
   netSalePrice: number;
   ivaDebit: number;
   mlFeeAmount: number;
-  cuotasCost: number;
   percepcionIva: number;
   percepcionComision: number;
   iibb: number;
@@ -135,7 +134,6 @@ export function calculateOrderGain(input: GainInput): GainBreakdown {
   const netSalePrice = netOfIVA(totalAmount);
 
   const mlFeeAmount = resolveMlFee(totalAmount, input.saleFee, input.mlFeePct);
-  const cuotasCost = netSalePrice * CUOTAS_RATE;
   const percepcionIva = netSalePrice * PERCEPCION_IVA_RATE;
   const percepcionComision = mlFeeAmount * PERCEPCION_COMISION_RATE;
   const iibb = netSalePrice * IIBB_RATE;
@@ -151,7 +149,6 @@ export function calculateOrderGain(input: GainInput): GainBreakdown {
   const gain =
     netSalePrice -
     mlFeeAmount -
-    cuotasCost -
     percepcionIva -
     percepcionComision -
     iibb -
@@ -165,7 +162,6 @@ export function calculateOrderGain(input: GainInput): GainBreakdown {
     netSalePrice,
     ivaDebit: totalAmount - netSalePrice,
     mlFeeAmount,
-    cuotasCost,
     percepcionIva,
     percepcionComision,
     iibb,

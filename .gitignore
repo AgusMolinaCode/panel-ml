@@ -44,6 +44,9 @@ yarn-error.log*
 /data/*.db-wal
 !/data/.gitkeep
 
+# exported data (contains credentials, do not commit)
+/data/export
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

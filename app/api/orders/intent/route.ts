@@ -10,7 +10,7 @@ import { NotAuthenticatedError } from "@/lib/ml/auth";
  */
 export async function GET(): Promise<NextResponse> {
   try {
-    const rows = getIntentOrders();
+    const rows = await getIntentOrders();
     const totalAmount = rows.reduce((sum, r) => sum + r.total_amount, 0);
     return NextResponse.json({
       orders: rows,

@@ -8,7 +8,7 @@ import { refreshAccessToken, TokenExchangeError } from "@/lib/ml/auth";
  * Useful for manual testing. The worker also does this proactively.
  */
 export async function POST(): Promise<NextResponse> {
-  const creds = getCredentials();
+  const creds = await getCredentials();
   if (!creds) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }

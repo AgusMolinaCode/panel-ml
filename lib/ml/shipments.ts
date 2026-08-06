@@ -1,7 +1,6 @@
-import { getCredentials, upsertShipment } from "../db";
+import { upsertShipment } from "../db";
 import type { Shipment } from "../db/types";
 import { mlGet, MercadoLibreApiError } from "./client";
-import { NotAuthenticatedError } from "./auth";
 
 /**
  * MercadoLibre Shipments API.
@@ -102,7 +101,7 @@ export async function syncShipmentsForOrder(orderId: number): Promise<number> {
       const detail = ref.id
         ? await mlGet<MlShipmentResponse>(`/shipments/${ref.id}`)
         : (ref as unknown as MlShipmentResponse);
-      upsertShipment(mapShipment(detail, orderId));
+      await upsertShipment(mapShipment(detail, orderId));
       count += 1;
     } catch (err) {
       console.error(`[shipments] failed to process shipment for order ${orderId}:`, err);
@@ -112,26 +111,34 @@ export async function syncShipmentsForOrder(orderId: number): Promise<number> {
 }
 
 export async function syncShipmentsForPaidOrders(limit = 50): Promise<number> {
-  // Implemented in worker via lib/db/queries.ts to find paid orders without shipments.
-  // Here we just expose a thin wrapper around syncShipmentsForOrder.
-  const { getDb } = await import("../db");
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT o.id FROM orders o
-        WHERE o.status IN ('paid', 'confirmed', 'partially_paid')
-          AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id)
-        ORDER BY o.date_created DESC
-        LIMIT ?`
-    )
-    .all(limit) as Array<{ id: number }>;
+  const { getSupabase } = await import("../supabase");
+  const supabase = getSupabase();
+
+  // Find paid orders without shipments using Supabase
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("id")
+    .in("status", ["paid", "confirmed", "partially_paid"])
+    .limit(limit);
+
+  if (!orders || orders.length === 0) return 0;
+
+  // Filter to orders that don't have shipments
+  const orderIds = orders.map((o) => o.id);
+  const { data: existingShipments } = await supabase
+    .from("shipments")
+    .select("order_id")
+    .in("order_id", orderIds);
+
+  const shippedOrderIds = new Set((existingShipments ?? []).map((s) => s.order_id));
+  const ordersWithoutShipments = orders.filter((o) => !shippedOrderIds.has(o.id));
 
   let total = 0;
-  for (const { id } of rows) {
+  for (const { id } of ordersWithoutShipments) {
     try {
       total += await syncShipmentsForOrder(id);
     } catch (err) {
-      if (err instanceof NotAuthenticatedError || err instanceof MercadoLibreApiError) {
+      if (err instanceof MercadoLibreApiError) {
         throw err;
       }
       console.error(`[shipments] order ${id} failed:`, err);

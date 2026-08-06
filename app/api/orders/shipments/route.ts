@@ -51,7 +51,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Invalid ids" }, { status: 400 });
     }
 
-    const dbMap = getShipmentsBulk(ids);
+    const dbMap = await getShipmentsBulk(ids);
     const result: Record<number, { status: string; tracking_number: string | null } | null> = {};
     const toCheckWithMl: number[] = [];
 
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         result[orderId] = { status, tracking_number };
 
         if (SENT_STATUSES.includes(status)) {
-          upsertShipment({
+          await upsertShipment({
             id: (ref as { id: number }).id,
             order_id: orderId,
             status,

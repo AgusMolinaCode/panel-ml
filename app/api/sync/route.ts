@@ -17,13 +17,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const results: Record<string, number | string> = {};
 
   if (target === "all" || target === "shipments") {
-    const logId = logSyncStart("api.sync.shipments");
+    const logId = await logSyncStart("api.sync.shipments");
     try {
       results.shipments = await syncShipmentsForPaidOrders(50);
-      logSyncFinish(logId, "success", results.shipments as number);
+      await logSyncFinish(logId, "success", results.shipments as number);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logSyncFinish(logId, "error", 0, message);
+      await logSyncFinish(logId, "error", 0, message);
       if (err instanceof NotAuthenticatedError) {
         return NextResponse.json({ error: err.message }, { status: 401 });
       }
@@ -32,13 +32,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (target === "all" || target === "visits") {
-    const logId = logSyncStart("api.sync.visits");
+    const logId = await logSyncStart("api.sync.visits");
     try {
       results.visits = await syncUserVisits(30);
-      logSyncFinish(logId, "success", results.visits as number);
+      await logSyncFinish(logId, "success", results.visits as number);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      logSyncFinish(logId, "error", 0, message);
+      await logSyncFinish(logId, "error", 0, message);
       if (err instanceof NotAuthenticatedError) {
         return NextResponse.json({ error: err.message }, { status: 401 });
       }

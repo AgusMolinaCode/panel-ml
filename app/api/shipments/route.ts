@@ -15,7 +15,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const limit = Math.min(Math.max(limitParam, 1), 500);
     const offset = Math.max(offsetParam, 0);
 
-    const all = getShipmentsToDispatch();
+    const all = await getShipmentsToDispatch();
     const items = all.slice(offset, offset + limit);
     const hasMore = offset + limit < all.length;
 

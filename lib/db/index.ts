@@ -1,186 +1,54 @@
-import Database from "better-sqlite3";
-import { mkdirSync, readFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import type { MlCredentials, Order, OrderItem, OrderPayment, OrderShipping, SyncLogEntry } from "./types";
-
-/**
- * SQLite connection singleton.
- * Uses better-sqlite3 (synchronous API, ideal for local single-process apps).
- *
- * In Next.js dev mode, hot reload can create multiple instances — we stash on globalThis
- * to reuse the connection across reloads and avoid "database is locked" errors.
- */
-
-const GLOBAL_KEY = "__panel_ml_db__";
-
-interface GlobalWithDb {
-  [GLOBAL_KEY]?: Database.Database;
-}
-
-function getGlobalDb(): Database.Database | undefined {
-  return (globalThis as unknown as GlobalWithDb)[GLOBAL_KEY];
-}
-
-function setGlobalDb(db: Database.Database): void {
-  (globalThis as unknown as GlobalWithDb)[GLOBAL_KEY] = db;
-}
-
-function resolveDbPath(): string {
-  const fromEnv = process.env.DB_PATH;
-  if (fromEnv && fromEnv.trim() !== "") {
-    return resolve(process.cwd(), fromEnv);
-  }
-  return resolve(process.cwd(), "data/ml.db");
-}
-
-function runMigrations(db: Database.Database): void {
-  const schemaPath = join(process.cwd(), "lib/db/schema.sql");
-  if (!existsSync(schemaPath)) {
-    throw new Error(`Schema file not found at ${schemaPath}`);
-  }
-  const schema = readFileSync(schemaPath, "utf-8");
-  db.exec(schema);
-
-  // Forward-only ALTER TABLE migrations for columns added after the initial
-  // schema. SQLite's CREATE TABLE IF NOT EXISTS does NOT add new columns to
-  // an existing table, so we have to ALTER them explicitly.
-  const ordersColumns = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
-  const has = (col: string) => ordersColumns.some((c) => c.name === col);
-  if (!has("tags_json")) {
-    db.exec("ALTER TABLE orders ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'");
-  }
-  if (!has("listing_type_id")) {
-    db.exec("ALTER TABLE orders ADD COLUMN listing_type_id TEXT");
-  }
-  if (!has("sale_fee")) {
-    db.exec("ALTER TABLE orders ADD COLUMN sale_fee REAL");
-  }
-  if (!has("claim_status")) {
-    db.exec("ALTER TABLE orders ADD COLUMN claim_status TEXT");
-  }
-
-  const costColumns = db.prepare("PRAGMA table_info(order_costs)").all() as Array<{ name: string }>;
-  const hasCost = (col: string) => costColumns.some((c) => c.name === col);
-  if (!hasCost("logistic_mode")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN logistic_mode TEXT NOT NULL DEFAULT 'iva'");
-  }
-  if (!hasCost("weight_kg")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN weight_kg REAL");
-  }
-  if (!hasCost("gain")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN gain REAL");
-  }
-  if (!hasCost("ml_envio")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN ml_envio REAL");
-  }
-  if (!hasCost("ml_neto")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN ml_neto REAL");
-  }
-  if (!hasCost("iibb")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN iibb REAL");
-  }
-  if (!hasCost("row_color")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN row_color TEXT");
-  }
-  if (!hasCost("manual_cost_input")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN manual_cost_input TEXT");
-  }
-  if (!hasCost("manual_cost_currency")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN manual_cost_currency TEXT");
-  }
-  if (!hasCost("dollar_rate")) {
-    db.exec("ALTER TABLE order_costs ADD COLUMN dollar_rate REAL");
-  }
-
-  const expenseColumns = db.prepare("PRAGMA table_info(monthly_expenses)").all() as Array<{ name: string }>;
-  const hasExpense = (col: string) => expenseColumns.some((c) => c.name === col);
-  if (!hasExpense("created_at")) {
-    db.exec("ALTER TABLE monthly_expenses ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0");
-    db.exec("UPDATE monthly_expenses SET created_at = unixepoch() * 1000 WHERE created_at = 0");
-  }
-  if (!hasExpense("updated_at")) {
-    db.exec("ALTER TABLE monthly_expenses ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0");
-    db.exec("UPDATE monthly_expenses SET updated_at = unixepoch() * 1000 WHERE updated_at = 0");
-  }
-}
-
-export function getDb(): Database.Database {
-  const existing = getGlobalDb();
-  if (existing) return existing;
-
-  const dbPath = resolveDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
-
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 5000");
-
-  runMigrations(db);
-
-  setGlobalDb(db);
-  return db;
-}
+import { getSupabase } from '../supabase'
+import type { MlCredentials, Order, OrderItem, OrderPayment, OrderShipping, SyncLogEntry } from './types'
 
 // ---------- Credentials ----------
 
-export function getCredentials(): MlCredentials | null {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM ml_credentials WHERE id = 1").get() as MlCredentials | undefined;
-  return row ?? null;
+export async function getCredentials(): Promise<MlCredentials | null> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('ml_credentials')
+    .select('*')
+    .eq('id', 1)
+    .single()
+  return data as MlCredentials | null
 }
 
-export function saveCredentials(creds: Omit<MlCredentials, "id" | "updated_at">): void {
-  const db = getDb();
-  const stmt = db.prepare(`
-    INSERT INTO ml_credentials (
-      id, user_id, nickname, email, access_token, refresh_token,
-      expires_at, scope, token_type, updated_at
-    ) VALUES (
-      1, @user_id, @nickname, @email, @access_token, @refresh_token,
-      @expires_at, @scope, @token_type, @updated_at
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      user_id = excluded.user_id,
-      nickname = excluded.nickname,
-      email = excluded.email,
-      access_token = excluded.access_token,
-      refresh_token = excluded.refresh_token,
-      expires_at = excluded.expires_at,
-      scope = excluded.scope,
-      token_type = excluded.token_type,
-      updated_at = excluded.updated_at
-  `);
-  stmt.run({ ...creds, updated_at: Date.now() });
+export async function saveCredentials(creds: Omit<MlCredentials, 'id' | 'updated_at'>): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('ml_credentials').upsert({
+    id: 1,
+    ...creds,
+    updated_at: Date.now()
+  })
 }
 
-export function clearCredentials(): void {
-  const db = getDb();
-  db.prepare("DELETE FROM ml_credentials WHERE id = 1").run();
+export async function clearCredentials(): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('ml_credentials').delete().eq('id', 1)
 }
 
 // ---------- Orders ----------
 
 interface RawOrderRow {
-  id: number;
-  status: string;
-  status_detail: string | null;
-  date_created: number;
-  date_closed: number | null;
-  last_updated: number | null;
-  total_amount: number;
-  currency_id: string;
-  buyer_id: number | null;
-  buyer_nickname: string | null;
-  items_json: string;
-  payments_json: string | null;
-  shipping_json: string | null;
-  tags_json: string;
-  listing_type_id: string | null;
-  sale_fee: number | null;
-  claim_status: string | null;
-  raw_json: string;
-  synced_at: number;
+  id: number
+  status: string
+  status_detail: string | null
+  date_created: number
+  date_closed: number | null
+  last_updated: number | null
+  total_amount: number
+  currency_id: string
+  buyer_id: number | null
+  buyer_nickname: string | null
+  items_json: string
+  payments_json: string | null
+  shipping_json: string | null
+  tags_json: string
+  listing_type_id: string | null
+  sale_fee: number | null
+  claim_status: string | null
+  raw_json: string
+  synced_at: number
 }
 
 function rowToOrder(row: RawOrderRow): Order {
@@ -201,45 +69,14 @@ function rowToOrder(row: RawOrderRow): Order {
     tags: row.tags_json ? (JSON.parse(row.tags_json) as string[]) : [],
     listing_type_id: row.listing_type_id ?? null,
     sale_fee: row.sale_fee ?? null,
-    claim_status: (row.claim_status as "opened" | "closed" | null) ?? null,
+    claim_status: (row.claim_status as 'opened' | 'closed' | null) ?? null,
     synced_at: row.synced_at,
-  };
+  }
 }
 
-export function upsertOrder(order: Omit<Order, "synced_at">): void {
-  const db = getDb();
-  const stmt = db.prepare(`
-    INSERT INTO orders (
-      id, status, status_detail, date_created, date_closed, last_updated,
-      total_amount, currency_id, buyer_id, buyer_nickname,
-      items_json, payments_json, shipping_json, tags_json, listing_type_id,
-      sale_fee, claim_status, raw_json, synced_at
-    ) VALUES (
-      @id, @status, @status_detail, @date_created, @date_closed, @last_updated,
-      @total_amount, @currency_id, @buyer_id, @buyer_nickname,
-      @items_json, @payments_json, @shipping_json, @tags_json, @listing_type_id,
-      @sale_fee, @claim_status, @raw_json, @synced_at
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      status = excluded.status,
-      status_detail = excluded.status_detail,
-      date_closed = excluded.date_closed,
-      last_updated = excluded.last_updated,
-      total_amount = excluded.total_amount,
-      currency_id = excluded.currency_id,
-      buyer_id = excluded.buyer_id,
-      buyer_nickname = excluded.buyer_nickname,
-      items_json = excluded.items_json,
-      payments_json = excluded.payments_json,
-      shipping_json = excluded.shipping_json,
-      tags_json = excluded.tags_json,
-      listing_type_id = excluded.listing_type_id,
-      sale_fee = excluded.sale_fee,
-      claim_status = excluded.claim_status,
-      raw_json = excluded.raw_json,
-      synced_at = excluded.synced_at
-  `);
-  stmt.run({
+export async function upsertOrder(order: Omit<Order, 'synced_at'>): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('orders').upsert({
     id: order.id,
     status: order.status,
     status_detail: order.status_detail ?? null,
@@ -259,91 +96,128 @@ export function upsertOrder(order: Omit<Order, "synced_at">): void {
     claim_status: order.claim_status ?? null,
     raw_json: JSON.stringify(order),
     synced_at: Date.now(),
-  });
+  }, {
+    onConflict: 'id'
+  })
 }
 
-export function getRecentOrders(limit = 50): Order[] {
-  const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM orders ORDER BY date_created DESC LIMIT ?")
-    .all(limit) as RawOrderRow[];
-  return rows.map(rowToOrder);
+export async function getRecentOrders(limit = 50): Promise<Order[]> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('orders')
+    .select('*')
+    .order('date_created', { ascending: false })
+    .limit(limit)
+  return (data as RawOrderRow[] || []).map(rowToOrder)
 }
 
-export function getLatestOrderDate(): number | null {
-  const db = getDb();
-  const row = db
-    .prepare("SELECT MAX(date_created) as max_date FROM orders")
-    .get() as { max_date: number | null } | undefined;
-  return row?.max_date ?? null;
+export async function getLatestOrderDate(): Promise<number | null> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('orders')
+    .select('date_created')
+    .order('date_created', { ascending: false })
+    .limit(1)
+    .single()
+  return data?.date_created ?? null
 }
 
-export function getOrderById(id: number): Order | null {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as RawOrderRow | undefined;
-  return row ? rowToOrder(row) : null;
+export async function getOrderById(id: number): Promise<Order | null> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', id)
+    .single()
+  return data ? rowToOrder(data as RawOrderRow) : null
 }
 
-export function updateOrderClaimStatus(orderId: number, claimStatus: "opened" | "closed" | null): void {
-  const db = getDb();
-  db.prepare("UPDATE orders SET claim_status = ? WHERE id = ?").run(claimStatus, orderId);
+export async function updateOrderClaimStatus(orderId: number, claimStatus: 'opened' | 'closed' | null): Promise<void> {
+  const supabase = getSupabase()
+  await supabase
+    .from('orders')
+    .update({ claim_status: claimStatus })
+    .eq('id', orderId)
 }
 
 // ---------- Sync log ----------
 
-export function logSyncStart(jobName: string): number {
-  const db = getDb();
-  const result = db
-    .prepare("INSERT INTO sync_log (job_name, started_at, status) VALUES (?, ?, 'running')")
-    .run(jobName, Date.now());
-  return Number(result.lastInsertRowid);
+export async function logSyncStart(jobName: string): Promise<number> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('sync_log')
+    .insert({
+      job_name: jobName,
+      started_at: Date.now(),
+      status: 'running'
+    })
+    .select('id')
+    .single()
+  return data!.id
 }
 
-export function logSyncFinish(
+export async function logSyncFinish(
   id: number,
-  status: "success" | "error" | "partial",
+  status: 'success' | 'error' | 'partial',
   recordsProcessed = 0,
   errorMessage: string | null = null
-): void {
-  const db = getDb();
-  db.prepare(
-    "UPDATE sync_log SET finished_at = ?, status = ?, records_processed = ?, error_message = ? WHERE id = ?"
-  ).run(Date.now(), status, recordsProcessed, errorMessage, id);
+): Promise<void> {
+  const supabase = getSupabase()
+  await supabase
+    .from('sync_log')
+    .update({
+      finished_at: Date.now(),
+      status,
+      records_processed: recordsProcessed,
+      error_message: errorMessage
+    })
+    .eq('id', id)
 }
 
-export function getRecentSyncLogs(limit = 20): SyncLogEntry[] {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM sync_log ORDER BY started_at DESC LIMIT ?")
-    .all(limit) as SyncLogEntry[];
+export async function getRecentSyncLogs(limit = 20): Promise<SyncLogEntry[]> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('sync_log')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .limit(limit)
+  return (data as SyncLogEntry[]) || []
 }
 
 // ---------- Order Costs ----------
 
-export function getOrderCost(orderId: number): import("./types").OrderCost | null {
-  const db = getDb();
-  const row = db
-    .prepare("SELECT * FROM order_costs WHERE order_id = ?")
-    .get(orderId) as import("./types").OrderCost | undefined;
-  return row ?? null;
+export async function getOrderCost(orderId: number): Promise<import('./types').OrderCost | null> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('order_costs')
+    .select('*')
+    .eq('order_id', orderId)
+    .single()
+  return data as import('./types').OrderCost | null
 }
 
-export function getOrderCostsBulk(orderIds: number[]): Map<number, import("./types").OrderCost> {
-  if (orderIds.length === 0) return new Map();
-  const db = getDb();
-  const placeholders = orderIds.map(() => "?").join(",");
-  const rows = db
-    .prepare(`SELECT * FROM order_costs WHERE order_id IN (${placeholders})`)
-    .all(...orderIds) as import("./types").OrderCost[];
-  return new Map(rows.map((r) => [r.order_id, r]));
+export async function getOrderCostsBulk(orderIds: number[]): Promise<Map<number, import('./types').OrderCost>> {
+  if (orderIds.length === 0) return new Map()
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('order_costs')
+    .select('*')
+    .in('order_id', orderIds)
+  const result = new Map<number, import('./types').OrderCost>()
+  if (data) {
+    for (const row of data as import('./types').OrderCost[]) {
+      result.set(row.order_id, row)
+    }
+  }
+  return result
 }
 
-export function upsertOrderCost(
+export async function upsertOrderCost(
   orderId: number,
   cost: number,
   mlFeePct: number,
   notes: string | null,
-  logisticMode: "iva" | "kilos" = "iva",
+  logisticMode: 'iva' | 'kilos' = 'iva',
   weightKg: number | null = null,
   gain: number | null = null,
   mlEnvio: number | null = null,
@@ -353,81 +227,84 @@ export function upsertOrderCost(
   manualCostInput: string | null = null,
   manualCostCurrency: string | null = null,
   dollarRate: number | null = null
-): void {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO order_costs (order_id, cost, ml_fee_pct, notes, logistic_mode, weight_kg, gain, ml_envio, ml_neto, iibb, row_color, manual_cost_input, manual_cost_currency, dollar_rate, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(order_id) DO UPDATE SET
-       cost = excluded.cost,
-       ml_fee_pct = excluded.ml_fee_pct,
-       notes = excluded.notes,
-       logistic_mode = excluded.logistic_mode,
-       weight_kg = excluded.weight_kg,
-       gain = excluded.gain,
-       ml_envio = excluded.ml_envio,
-       ml_neto = excluded.ml_neto,
-       iibb = excluded.iibb,
-       row_color = excluded.row_color,
-       manual_cost_input = excluded.manual_cost_input,
-       manual_cost_currency = excluded.manual_cost_currency,
-       dollar_rate = excluded.dollar_rate,
-       updated_at = excluded.updated_at`
-  ).run(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency, dollarRate, Date.now());
+): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('order_costs').upsert({
+    order_id: orderId,
+    cost,
+    ml_fee_pct: mlFeePct,
+    notes,
+    logistic_mode: logisticMode,
+    weight_kg: weightKg,
+    gain,
+    ml_envio: mlEnvio,
+    ml_neto: mlNeto,
+    iibb,
+    row_color: rowColor,
+    manual_cost_input: manualCostInput,
+    manual_cost_currency: manualCostCurrency,
+    dollar_rate: dollarRate,
+    updated_at: Date.now()
+  }, {
+    onConflict: 'order_id'
+  })
 }
 
-export function deleteOrderCost(orderId: number): void {
-  const db = getDb();
-  db.prepare("DELETE FROM order_costs WHERE order_id = ?").run(orderId);
+export async function deleteOrderCost(orderId: number): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('order_costs').delete().eq('order_id', orderId)
 }
 
 // ---------- Monthly Expenses ----------
 
-export function getMonthlyExpenses(month: string): import("./types").MonthlyExpense[] {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM monthly_expenses WHERE month = ? ORDER BY created_at ASC")
-    .all(month) as import("./types").MonthlyExpense[];
+export async function getMonthlyExpenses(month: string): Promise<import('./types').MonthlyExpense[]> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('monthly_expenses')
+    .select('*')
+    .eq('month', month)
+    .order('created_at', { ascending: true })
+  return (data as import('./types').MonthlyExpense[]) || []
 }
 
-export function upsertMonthlyExpense(expense: import("./types").MonthlyExpense): void {
-  const db = getDb();
-  db.prepare(
-    "INSERT OR REPLACE INTO monthly_expenses (id, month, concepto, monto) VALUES (?, ?, ?, ?)"
-  ).run(expense.id, expense.month, expense.concepto, expense.monto);
+export async function upsertMonthlyExpense(expense: import('./types').MonthlyExpense): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('monthly_expenses').upsert(expense, {
+    onConflict: 'id'
+  })
 }
 
-export function deleteMonthlyExpense(id: string): void {
-  const db = getDb();
-  db.prepare("DELETE FROM monthly_expenses WHERE id = ?").run(id);
+export async function deleteMonthlyExpense(id: string): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('monthly_expenses').delete().eq('id', id)
 }
 
 // ---------- Shipments ----------
 
 interface RawShipmentRow {
-  id: number;
-  order_id: number;
-  status: string;
-  substatus: string | null;
-  logistic_type: string | null;
-  mode: string | null;
-  tracking_number: string | null;
-  tracking_method: string | null;
-  carrier: string | null;
-  cost: number | null;
-  cost_currency: string | null;
-  receiver_address_json: string | null;
-  shipping_items_json: string | null;
-  shipping_option_json: string | null;
-  handling_limit: number | null;
-  date_created: number | null;
-  date_first_printed: number | null;
-  date_delivered: number | null;
-  raw_json: string;
-  synced_at: number;
+  id: number
+  order_id: number
+  status: string
+  substatus: string | null
+  logistic_type: string | null
+  mode: string | null
+  tracking_number: string | null
+  tracking_method: string | null
+  carrier: string | null
+  cost: number | null
+  cost_currency: string | null
+  receiver_address_json: string | null
+  shipping_items_json: string | null
+  shipping_option_json: string | null
+  handling_limit: number | null
+  date_created: number | null
+  date_first_printed: number | null
+  date_delivered: number | null
+  raw_json: string
+  synced_at: number
 }
 
-function rowToShipment(row: RawShipmentRow): import("./types").Shipment {
+function rowToShipment(row: RawShipmentRow): import('./types').Shipment {
   return {
     id: row.id,
     order_id: row.order_id,
@@ -448,48 +325,12 @@ function rowToShipment(row: RawShipmentRow): import("./types").Shipment {
     date_first_printed: row.date_first_printed,
     date_delivered: row.date_delivered,
     synced_at: row.synced_at,
-  };
+  }
 }
 
-export function upsertShipment(s: Omit<import("./types").Shipment, "synced_at">): void {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO shipments (
-      id, order_id, status, substatus, logistic_type, mode,
-      tracking_number, tracking_method, carrier,
-      cost, cost_currency,
-      receiver_address_json, shipping_items_json, shipping_option_json,
-      handling_limit, date_created, date_first_printed, date_delivered,
-      raw_json, synced_at
-    ) VALUES (
-      @id, @order_id, @status, @substatus, @logistic_type, @mode,
-      @tracking_number, @tracking_method, @carrier,
-      @cost, @cost_currency,
-      @receiver_address_json, @shipping_items_json, @shipping_option_json,
-      @handling_limit, @date_created, @date_first_printed, @date_delivered,
-      @raw_json, @synced_at
-    )
-    ON CONFLICT(id) DO UPDATE SET
-      order_id = excluded.order_id,
-      status = excluded.status,
-      substatus = excluded.substatus,
-      logistic_type = excluded.logistic_type,
-      mode = excluded.mode,
-      tracking_number = excluded.tracking_number,
-      tracking_method = excluded.tracking_method,
-      carrier = excluded.carrier,
-      cost = excluded.cost,
-      cost_currency = excluded.cost_currency,
-      receiver_address_json = excluded.receiver_address_json,
-      shipping_items_json = excluded.shipping_items_json,
-      shipping_option_json = excluded.shipping_option_json,
-      handling_limit = excluded.handling_limit,
-      date_created = excluded.date_created,
-      date_first_printed = excluded.date_first_printed,
-      date_delivered = excluded.date_delivered,
-      raw_json = excluded.raw_json,
-      synced_at = excluded.synced_at`
-  ).run({
+export async function upsertShipment(s: Omit<import('./types').Shipment, 'synced_at'>): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('shipments').upsert({
     id: s.id,
     order_id: s.order_id,
     status: s.status,
@@ -510,61 +351,64 @@ export function upsertShipment(s: Omit<import("./types").Shipment, "synced_at">)
     date_delivered: s.date_delivered,
     raw_json: JSON.stringify(s),
     synced_at: Date.now(),
-  });
+  }, {
+    onConflict: 'id'
+  })
 }
 
-export function getShipmentById(id: number): import("./types").Shipment | null {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM shipments WHERE id = ?").get(id) as RawShipmentRow | undefined;
-  return row ? rowToShipment(row) : null;
+export async function getShipmentById(id: number): Promise<import('./types').Shipment | null> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('shipments')
+    .select('*')
+    .eq('id', id)
+    .single()
+  return data ? rowToShipment(data as RawShipmentRow) : null
 }
 
-export function getShipmentsBulk(orderIds: number[]): Map<number, { status: string; tracking_number: string | null } | null> {
-  const db = getDb();
-  const result = new Map<number, { status: string; tracking_number: string | null } | null>();
-  if (orderIds.length === 0) return result;
-  const placeholders = orderIds.map(() => "?").join(",");
-  const rows = db.prepare(
-    `SELECT order_id, status, tracking_number FROM shipments WHERE order_id IN (${placeholders})`
-  ).all(...orderIds) as Array<{ order_id: number; status: string; tracking_number: string | null }>;
+export async function getShipmentsBulk(orderIds: number[]): Promise<Map<number, { status: string; tracking_number: string | null } | null>> {
+  const result = new Map<number, { status: string; tracking_number: string | null } | null>()
+  if (orderIds.length === 0) return result
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('shipments')
+    .select('order_id, status, tracking_number')
+    .in('order_id', orderIds)
   for (const id of orderIds) {
-    result.set(id, null);
+    result.set(id, null)
   }
-  for (const row of rows) {
-    result.set(row.order_id, { status: row.status, tracking_number: row.tracking_number });
+  if (data) {
+    for (const row of data as Array<{ order_id: number; status: string; tracking_number: string | null }>) {
+      result.set(row.order_id, { status: row.status, tracking_number: row.tracking_number })
+    }
   }
-  return result;
+  return result
 }
 
 // ---------- Visits ----------
 
-export function upsertItemVisit(itemId: string, date: string, total: number): void {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO item_visits (item_id, date, total, synced_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(item_id, date) DO UPDATE SET
-       total = excluded.total,
-       synced_at = excluded.synced_at`
-  ).run(itemId, date, total, Date.now());
+export async function upsertItemVisit(itemId: string, date: string, total: number): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('item_visits').upsert({
+    item_id: itemId,
+    date,
+    total,
+    synced_at: Date.now()
+  }, {
+    onConflict: 'item_id,date'
+  })
 }
 
-export function upsertUserVisits(visits: Array<{ date: string; total: number }>): number {
-  // For the user-level aggregate, we store the user as a single pseudo-item.
-  // The item_id "__user__" is the convention.
-  const db = getDb();
-  const stmt = db.prepare(
-    `INSERT INTO item_visits (item_id, date, total, synced_at)
-     VALUES ('__user__', ?, ?, ?)
-     ON CONFLICT(item_id, date) DO UPDATE SET
-       total = excluded.total,
-       synced_at = excluded.synced_at`
-  );
-  const tx = db.transaction((rows: typeof visits) => {
-    for (const r of rows) stmt.run(r.date, r.total, Date.now());
-  });
-  tx(visits);
-  return visits.length;
+export async function upsertUserVisits(visits: Array<{ date: string; total: number }>): Promise<number> {
+  const supabase = getSupabase()
+  const inserts = visits.map(v => ({
+    item_id: '__user__',
+    date: v.date,
+    total: v.total,
+    synced_at: Date.now()
+  }))
+  await supabase.from('item_visits').upsert(inserts, {
+    onConflict: 'item_id,date'
+  })
+  return visits.length
 }
-
-// ---------- Sync log ----------

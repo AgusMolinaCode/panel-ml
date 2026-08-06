@@ -12,7 +12,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const daysParam = parseInt(url.searchParams.get("days") ?? "30", 10);
     const days = Math.min(Math.max(daysParam, 1), 150);
 
-    const summary = getUserVisitSummary(days);
+    const summary = await getUserVisitSummary(days);
     return NextResponse.json(summary);
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {

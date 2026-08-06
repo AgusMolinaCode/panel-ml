@@ -48,7 +48,7 @@ export async function syncUserVisits(days = 30): Promise<number> {
   if (days < 1) days = 1;
   if (days > 150) days = 150;
 
-  const creds = getCredentials();
+  const creds = await getCredentials();
   if (!creds) throw new NotAuthenticatedError();
 
   const res = await mlGet<MlTimeWindowResponse>(
@@ -61,7 +61,7 @@ export async function syncUserVisits(days = 30): Promise<number> {
     date: isoToDate(r.date),
     total: r.total,
   }));
-  return upsertUserVisits(rows);
+  return await upsertUserVisits(rows);
 }
 
 /**
@@ -78,5 +78,5 @@ export async function syncItemVisits(itemId: string, days = 30): Promise<number>
 
   const results = res.results ?? [];
   const rows = results.map((r) => ({ date: isoToDate(r.date), total: r.total }));
-  return upsertUserVisits(rows); // Reuses the same upsert; the caller passes itemId via key if needed
+  return await upsertUserVisits(rows); // Reuses the same upsert; the caller passes itemId via key if needed
 }

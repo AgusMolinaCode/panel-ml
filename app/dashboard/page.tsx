@@ -15,7 +15,7 @@ import { BarChart3, ShoppingCart, Wallet } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage(): Promise<React.ReactElement> {
-  const creds = getCredentials();
+  const creds = await getCredentials();
 
   const now = new Date();
   const fromMs = startOfMonth(now).getTime();
@@ -35,8 +35,8 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
       }
     : { connected: false as const };
 
-  const initialStats = getOrderStats({ fromMs, toMs });
-  const initialShipments = getShipmentsToDispatch();
+  const initialStats = await getOrderStats({ fromMs, toMs });
+  const initialShipments = await getShipmentsToDispatch();
 
   return (
     <main className="mx-auto max-w-[110rem] px-4 py-8 sm:px-6 lg:px-8">

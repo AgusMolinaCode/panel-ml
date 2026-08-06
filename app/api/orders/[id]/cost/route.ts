@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<N
     if (Number.isNaN(orderId)) {
       return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
     }
-    const cost = getOrderCost(orderId);
+    const cost = await getOrderCost(orderId);
     return NextResponse.json({ cost });
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<N
       return NextResponse.json({ error: "Invalid dollar_rate" }, { status: 400 });
     }
 
-    upsertOrderCost(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency, dollarRate);
+    await upsertOrderCost(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency, dollarRate);
     return NextResponse.json({
       success: true,
       cost: { order_id: orderId, cost, ml_fee_pct: mlFeePct, notes, logistic_mode: logisticMode, weight_kg: weightKg, gain, ml_envio: mlEnvio, ml_neto: mlNeto, iibb, row_color: rowColor, manual_cost_input: manualCostInput, manual_cost_currency: manualCostCurrency, dollar_rate: dollarRate, updated_at: Date.now() },
@@ -104,7 +104,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
     if (Number.isNaN(orderId)) {
       return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
     }
-    deleteOrderCost(orderId);
+    await deleteOrderCost(orderId);
     return NextResponse.json({ success: true });
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {

@@ -7,10 +7,10 @@ import { getCredentials, clearCredentials } from "@/lib/db";
  * the user to re-authenticate via the OAuth flow.
  */
 export async function POST(): Promise<NextResponse> {
-  const creds = getCredentials();
+  const creds = await getCredentials();
   if (!creds) {
     return NextResponse.json({ success: true, message: "Already disconnected" });
   }
-  clearCredentials();
+  await clearCredentials();
   return NextResponse.json({ success: true });
 }

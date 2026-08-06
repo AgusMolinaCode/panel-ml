@@ -17,7 +17,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (ids.length === 0) {
       return NextResponse.json({ error: "Invalid ids" }, { status: 400 });
     }
-    const map = getOrderCostsBulk(ids);
+    const map = await getOrderCostsBulk(ids);
     const result: Record<number, object | null> = {};
     for (const [id, cost] of map) {
       result[id] = cost;

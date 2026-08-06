@@ -28,7 +28,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (!Number.isNaN(to) && to > 0) opts.toMs = to;
     if (statusParam) opts.statuses = statusParam.split(",").map((s) => s.trim()).filter(Boolean);
 
-    const { orders, total } = queryOrders(opts);
+    const { orders, total } = await queryOrders(opts);
 
     if (format === "pdf") {
       return generatePdf(orders, total, from, to);
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 }
 
-function generateExcel(orders: ReturnType<typeof queryOrders>["orders"], total: number, from: number, to: number): Response {
+function generateExcel(orders: Awaited<ReturnType<typeof queryOrders>>["orders"], total: number, from: number, to: number): Response {
   const rows = orders.map((o) => ({
     Fecha: formatDate(o.date_created),
     "ID Orden": o.id,
@@ -85,7 +85,7 @@ function generateExcel(orders: ReturnType<typeof queryOrders>["orders"], total: 
   });
 }
 
-function generatePdf(orders: ReturnType<typeof queryOrders>["orders"], total: number, from: number, to: number): Response {
+function generatePdf(orders: Awaited<ReturnType<typeof queryOrders>>["orders"], total: number, from: number, to: number): Response {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
   // Header

@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   if (!month) {
     return NextResponse.json({ error: 'month param required' }, { status: 400 });
   }
-  const expenses = getMonthlyExpenses(month);
+  const expenses = await getMonthlyExpenses(month);
   return NextResponse.json({ expenses });
 }
 
@@ -14,9 +14,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
 
   if (body.cloneFrom && body.cloneTo) {
-    const sourceExpenses = getMonthlyExpenses(body.cloneFrom);
+    const sourceExpenses = await getMonthlyExpenses(body.cloneFrom);
     for (const expense of sourceExpenses) {
-      upsertMonthlyExpense({
+      await upsertMonthlyExpense({
         id: crypto.randomUUID(),
         month: body.cloneTo,
         concepto: expense.concepto,
@@ -26,6 +26,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, cloned: sourceExpenses.length });
   }
 
-  upsertMonthlyExpense(body);
+  await upsertMonthlyExpense(body);
   return NextResponse.json({ success: true });
 }

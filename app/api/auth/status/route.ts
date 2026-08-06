@@ -7,7 +7,7 @@ import { isAuthenticated } from "@/lib/ml/auth";
  * Returns current connection status, token expiry, and seller info.
  */
 export async function GET(): Promise<NextResponse> {
-  const creds = getCredentials();
+  const creds = await getCredentials();
   if (!creds || !isAuthenticated()) {
     return NextResponse.json({ connected: false });
   }

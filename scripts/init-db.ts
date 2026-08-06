@@ -1,29 +1,38 @@
 /**
- * Standalone script to initialize the SQLite database.
+ * Standalone script to verify Supabase connection.
  * Run with: npm run init-db
- *
- * This is mostly for clarity — the DB is also auto-created on first connection
- * via lib/db/index.ts. Use this script if you want to verify schema or
- * initialize before starting any worker.
  */
 
-import { getDb } from "../lib/db/index";
+import { getSupabase } from "../lib/supabase";
 
-console.log("Initializing SQLite database...");
+console.log("Checking Supabase connection...\n");
 
-try {
-  const db = getDb();
-  const tables = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    .all() as Array<{ name: string }>;
+async function main() {
+  const supabase = getSupabase();
 
-  console.log("Tables created:");
-  for (const { name } of tables) {
-    const count = (db.prepare(`SELECT COUNT(*) as c FROM ${name}`).get() as { c: number }).c;
-    console.log(`  - ${name} (${count} rows)`);
+  const tables = [
+    "ml_credentials",
+    "orders",
+    "shipments",
+    "order_costs",
+    "monthly_expenses",
+    "item_visits",
+    "sync_log",
+  ];
+
+  for (const table of tables) {
+    const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
+    if (error) {
+      console.error(`  ❌ ${table}: ${error.message}`);
+    } else {
+      console.log(`  ✅ ${table}: ${count ?? 0} rows`);
+    }
   }
-  console.log("\nDatabase ready at data/ml.db");
-} catch (err) {
-  console.error("Failed to initialize database:", err);
-  process.exit(1);
+
+  console.log("\nDatabase connection verified!");
 }
+
+main().catch((err) => {
+  console.error("Failed to connect:", err);
+  process.exit(1);
+});

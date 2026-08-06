@@ -14,10 +14,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
 
-  const logId = logSyncStart("api.orders.sync");
+  const logId = await logSyncStart("api.orders.sync");
   try {
     const processed = await syncRecentOrders(limit);
-    logSyncFinish(logId, "success", processed);
+    await logSyncFinish(logId, "success", processed);
     return NextResponse.json({ success: true, processed });
   } catch (err) {
     const status = "error";
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         : err instanceof Error
         ? err.message
         : "Unknown error during sync";
-    logSyncFinish(logId, status, 0, message);
+    await logSyncFinish(logId, status, 0, message);
 
     const httpStatus = err instanceof NotAuthenticatedError ? 401 : 500;
     return NextResponse.json({ error: message }, { status: httpStatus });

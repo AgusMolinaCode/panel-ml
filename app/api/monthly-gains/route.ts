@@ -13,7 +13,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         ? fromParam
         : toMs - 30 * 24 * 60 * 60 * 1000;
 
-    const gains = getMonthlyGains(fromMs, toMs);
+    const gains = await getMonthlyGains(fromMs, toMs);
     return NextResponse.json(gains);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

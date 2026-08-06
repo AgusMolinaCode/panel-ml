@@ -18,7 +18,6 @@ loadEnvConfig(process.cwd());
 
 (async () => {
   const { config } = await import("../lib/config");
-  const { getDb } = await import("../lib/db");
   const { registerJob, startAll, stopAll } = await import("./scheduler");
   const { runRefreshCheck } = await import("./refresh-check");
   const { runSyncOrders } = await import("./sync-orders");
@@ -32,8 +31,6 @@ loadEnvConfig(process.cwd());
   console.log(` DB:        ${config.paths.db}`);
   console.log(` Sync every: 10 min (shipments cada 4 h)`);
   console.log("");
-
-  getDb();
 
   registerJob({
     name: "refresh-check",

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         ? fromParam
         : toMs - 30 * 24 * 60 * 60 * 1000;
 
-    const stats = getOrderStats({ fromMs, toMs });
+    const stats = await getOrderStats({ fromMs, toMs });
     return NextResponse.json({ range: { from: fromMs, to: toMs }, ...stats });
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {

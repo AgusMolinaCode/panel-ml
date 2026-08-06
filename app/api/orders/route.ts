@@ -30,18 +30,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (search) opts.search = search;
 
     if (url.searchParams.get("latest") === "true") {
-      const result = queryOrders({ ...opts, limit: 1 });
+      const result = await queryOrders({ ...opts, limit: 1 });
       return NextResponse.json({
         latestOrderId: result.orders[0]?.id ?? null,
         total: result.total,
       });
     }
 
-    const result = queryOrders(opts);
+    const result = await queryOrders(opts);
 
     const costsMap: Record<number, object | null> = {};
     if (result.orders.length > 0) {
-      const costs = getOrderCostsBulk(result.orders.map((o) => o.id));
+      const costs = await getOrderCostsBulk(result.orders.map((o) => o.id));
       for (const [id, cost] of costs) {
         costsMap[id] = cost;
       }

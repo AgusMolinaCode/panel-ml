@@ -3,21 +3,25 @@
  * Checks orders from the last 90 days that may have open/closed claims.
  */
 
-import { getDb } from "../lib/db";
+import { getSupabase } from "../lib/supabase";
 import { getOrderClaimStatus } from "../lib/ml/claims";
 import { updateOrderClaimStatus } from "../lib/db";
 
 const LOOKBACK_DAYS = 90;
 
 export async function runSyncClaims(): Promise<void> {
-  const db = getDb();
+  const supabase = getSupabase();
   const cutoff = Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 
-  const orders = db
-    .prepare(
-      `SELECT id FROM orders WHERE date_created >= ? AND status NOT IN ('cancelled', 'invalid') ORDER BY date_created DESC LIMIT 200`
-    )
-    .all(cutoff) as Array<{ id: number }>;
+  const { data } = await supabase
+    .from("orders")
+    .select("id")
+    .gte("date_created", cutoff)
+    .not("status", "in", '("cancelled","invalid")')
+    .order("date_created", { ascending: false })
+    .limit(200);
+
+  const orders = (data as Array<{ id: number }>) || [];
 
   let updated = 0;
 
@@ -25,7 +29,7 @@ export async function runSyncClaims(): Promise<void> {
     try {
       const claimStatus = await getOrderClaimStatus(id);
       if (claimStatus !== null) {
-        updateOrderClaimStatus(id, claimStatus);
+        await updateOrderClaimStatus(id, claimStatus);
         updated++;
       }
     } catch (err) {

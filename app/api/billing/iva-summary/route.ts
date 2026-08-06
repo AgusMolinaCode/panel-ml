@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getSupabase } from "@/lib/supabase";
 
 const IVA_RATE = 0.21;
 const IVA_FRACTION = IVA_RATE / (1 + IVA_RATE);
@@ -43,26 +43,59 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const { fromMs, toMs } = getMonthRange(year, month);
 
-    const db = getDb();
-    const rows = db
-      .prepare(
-        `SELECT
-           o.id,
-           o.date_created,
-           o.total_amount,
-           o.status,
-           o.sale_fee,
-           oc.cost,
-           oc.ml_envio,
-           oc.weight_kg,
-           oc.dollar_rate
-         FROM orders o
-         LEFT JOIN order_costs oc ON o.id = oc.order_id
-         WHERE o.date_created BETWEEN ? AND ?
-           AND o.status IN ('paid', 'confirmed', 'partially_paid', 'delivered')
-         ORDER BY o.date_created ASC`
-      )
-      .all(fromMs, toMs) as OrderWithCost[];
+    const supabase = getSupabase();
+
+    // Fetch orders and costs separately, join in application code
+    const { data: orders } = await supabase
+      .from("orders")
+      .select("id, date_created, total_amount, status, sale_fee")
+      .gte("date_created", fromMs)
+      .lte("date_created", toMs)
+      .in("status", ["paid", "confirmed", "partially_paid", "delivered"])
+      .order("date_created", { ascending: true });
+
+    if (!orders || orders.length === 0) {
+      // No orders in this month
+      return NextResponse.json({
+        month: `${year}-${String(month).padStart(2, "0")}`,
+        local: {
+          orderCount: 0,
+          ordersWithCost: 0,
+          totalSales: 0,
+          ivaDebito: 0,
+          ivaCreditoImportacion: 0,
+          ivaCreditoComisionesML: 0,
+          ivaCreditoEnvioML: 0,
+          ivaCreditoCourier: 0,
+          ivaCreditoFiscalTotal: 0,
+          ivaAAbonar: 0,
+        },
+        projection: null,
+      });
+    }
+
+    const orderIds = orders.map((o) => o.id);
+    const { data: costs } = await supabase
+      .from("order_costs")
+      .select("order_id, cost, ml_envio, weight_kg, dollar_rate")
+      .in("order_id", orderIds);
+
+    const costMap = new Map((costs ?? []).map((c) => [c.order_id, c]));
+
+    const rows: OrderWithCost[] = orders.map((o) => {
+      const c = costMap.get(o.id);
+      return {
+        id: o.id,
+        date_created: o.date_created,
+        total_amount: o.total_amount,
+        status: o.status,
+        sale_fee: o.sale_fee,
+        cost: c?.cost ?? null,
+        ml_envio: c?.ml_envio ?? null,
+        weight_kg: c?.weight_kg ?? null,
+        dollar_rate: c?.dollar_rate ?? null,
+      };
+    });
 
     let ivaDebito = 0;
     let creditoImportacion = 0;

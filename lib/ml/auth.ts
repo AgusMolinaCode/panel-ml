@@ -79,7 +79,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
   }
 
   const tokens = (await res.json()) as TokenResponse;
-  persistTokens(tokens);
+  await persistTokens(tokens);
   return tokens;
 }
 
@@ -110,16 +110,16 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
   }
 
   const tokens = (await res.json()) as TokenResponse;
-  persistTokens(tokens);
+  await persistTokens(tokens);
   return tokens;
 }
 
-function persistTokens(tokens: TokenResponse): void {
+async function persistTokens(tokens: TokenResponse): Promise<void> {
   const expiresAt = Date.now() + tokens.expires_in * 1000;
 
   // Preserve nickname/email if we already have them; ML doesn't return them here.
-  const existing = getCredentials();
-  saveCredentials({
+  const existing = await getCredentials();
+  await saveCredentials({
     user_id: tokens.user_id,
     nickname: existing?.user_id === tokens.user_id ? existing.nickname : null,
     email: existing?.user_id === tokens.user_id ? existing.email : null,
@@ -136,7 +136,7 @@ function persistTokens(tokens: TokenResponse): void {
  * Called after a successful exchange; failures are non-fatal.
  */
 export async function fetchAndStoreUserInfo(): Promise<void> {
-  const creds = getCredentials();
+  const creds = await getCredentials();
   if (!creds) throw new NotAuthenticatedError();
 
   const res = await fetch(`${config.ml.apiBase}/users/${creds.user_id}`, {
@@ -164,7 +164,7 @@ const REFRESH_BUFFER_MS = 15 * 60 * 1000; // refresh 15 min before expiry
  * Throws NotAuthenticatedError if no credentials are stored.
  */
 export async function getValidAccessToken(): Promise<string> {
-  const creds = getCredentials();
+  const creds = await getCredentials();
   if (!creds) throw new NotAuthenticatedError();
 
   if (creds.expires_at - Date.now() > REFRESH_BUFFER_MS) {
@@ -175,7 +175,7 @@ export async function getValidAccessToken(): Promise<string> {
   return refreshed.access_token;
 }
 
-export function isAuthenticated(): boolean {
-  const creds = getCredentials();
+export async function isAuthenticated(): Promise<boolean> {
+  const creds = await getCredentials();
   return creds !== null;
 }

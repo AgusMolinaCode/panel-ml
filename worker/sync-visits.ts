@@ -8,14 +8,14 @@ import { MercadoLibreApiError } from "../lib/ml/client";
  * The API caps the window at 150 days; we use 30 to keep responses small.
  */
 export async function runSyncVisits(days = 30): Promise<void> {
-  const logId = logSyncStart("worker.sync-visits");
+  const logId = await logSyncStart("worker.sync-visits");
   try {
     const count = await syncUserVisits(days);
-    logSyncFinish(logId, "success", count);
+    await logSyncFinish(logId, "success", count);
     console.log(`[sync-visits] stored ${count} daily records`);
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {
-      logSyncFinish(logId, "error", 0, "Not authenticated");
+      await logSyncFinish(logId, "error", 0, "Not authenticated");
       console.log("[sync-visits] skipped — not authenticated yet");
       return;
     }
@@ -25,7 +25,7 @@ export async function runSyncVisits(days = 30): Promise<void> {
         : err instanceof Error
         ? err.message
         : "Unknown error";
-    logSyncFinish(logId, "error", 0, message);
+    await logSyncFinish(logId, "error", 0, message);
     console.error(`[sync-visits] failed: ${message}`);
   }
 }

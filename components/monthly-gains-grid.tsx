@@ -6,6 +6,7 @@ import { startOfDay, endOfDay, subDays, startOfMonth, subMonths } from "date-fns
 import { Card } from "./ui/card";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { formatMoney } from "@/lib/format";
+import { gainForOrder } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
 export type RangeMode = "day" | "week" | "month" | "2months" | "3months";
@@ -49,6 +50,8 @@ type CostData = {
   gain: number | null;
   ml_envio: number | null;
   ml_fee_pct: number;
+  weight_kg: number | null;
+  dollar_rate: number | null;
 };
 
 const MONTH_NAMES: Record<string, string> = {
@@ -195,12 +198,21 @@ export function MonthlyGainsGrid() {
         for (const order of allOrders) {
           const cost = costsData[order.id];
           const totalAmount = Number(order.total_amount) || 0;
-          const saleFee = order.sale_fee ?? totalAmount * 0.19;
-          const envio = cost?.ml_envio ?? 0;
-          const iibb = totalAmount * 0.0025;
-          const netSale = totalAmount - saleFee - envio - iibb;
-          const calculatedGain = netSale - (cost?.cost ?? 0);
-          const gain = cost?.gain != null ? cost.gain : cost ? calculatedGain : null;
+          // Ganancia manual prioriza. Si no: fórmula nueva desde ago-2026
+          // (era IVA), fórmula simple antes de ago-2026 (lib/pricing)
+          const gain = cost?.gain != null
+            ? cost.gain
+            : cost
+            ? gainForOrder(Number(order.date_created) || 0, {
+                totalAmount,
+                saleFee: order.sale_fee,
+                mlFeePct: cost.ml_fee_pct,
+                costARS: cost.cost,
+                mlEnvio: cost.ml_envio,
+                weightKg: cost.weight_kg,
+                dollarRate: cost.dollar_rate,
+              })
+            : null;
 
           const monthStr = new Date(Number(order.date_created) || 0).toISOString().slice(0, 7);
           if (!monthMap.has(monthStr)) {

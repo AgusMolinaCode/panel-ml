@@ -132,6 +132,8 @@ export interface OrderCost {
   ml_envio: number | null;
   ml_neto?: number | null;
   iibb?: number | null;
+  /** Cotización USD (ARS/USD) usada al guardar el costo (courier y conversión USD→ARS) */
+  dollar_rate?: number | null;
   row_color?: string | null;
   manual_cost_input?: string | null;
   manual_cost_currency?: string | null;

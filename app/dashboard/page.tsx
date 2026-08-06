@@ -7,6 +7,7 @@ import { OrdersStats } from "@/components/orders-stats";
 import { OrdersTable } from "@/components/orders-table";
 import { DashboardClient } from "@/components/dashboard-client";
 import { MonthlyGainsGrid } from "@/components/monthly-gains-grid";
+import { MonthlyIvaSummary } from "@/components/monthly-iva-summary";
 import { MonthlyExpenses } from "@/components/monthly-expenses";
 import { PriceCalculator } from "@/components/price-calculator";
 import { BarChart3, ShoppingCart, Wallet } from "lucide-react";
@@ -81,6 +82,13 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
           </Suspense>
         </div>
       </div>
+
+      {/* Monthly IVA Summary */}
+      {/* <div className="mt-6 animate-fade-in-up">
+        <Suspense fallback={<div className="h-48 animate-pulse rounded-lg bg-muted" />}>
+          <MonthlyIvaSummary />
+        </Suspense>
+      </div> */}
 
       {/* Monthly Gains Grid */}
       <div className="mt-6 animate-fade-in-up">

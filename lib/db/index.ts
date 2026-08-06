@@ -88,6 +88,9 @@ function runMigrations(db: Database.Database): void {
   if (!hasCost("manual_cost_currency")) {
     db.exec("ALTER TABLE order_costs ADD COLUMN manual_cost_currency TEXT");
   }
+  if (!hasCost("dollar_rate")) {
+    db.exec("ALTER TABLE order_costs ADD COLUMN dollar_rate REAL");
+  }
 
   const expenseColumns = db.prepare("PRAGMA table_info(monthly_expenses)").all() as Array<{ name: string }>;
   const hasExpense = (col: string) => expenseColumns.some((c) => c.name === col);
@@ -348,12 +351,13 @@ export function upsertOrderCost(
   iibb: number | null = null,
   rowColor: string | null = null,
   manualCostInput: string | null = null,
-  manualCostCurrency: string | null = null
+  manualCostCurrency: string | null = null,
+  dollarRate: number | null = null
 ): void {
   const db = getDb();
   db.prepare(
-    `INSERT INTO order_costs (order_id, cost, ml_fee_pct, notes, logistic_mode, weight_kg, gain, ml_envio, ml_neto, iibb, row_color, manual_cost_input, manual_cost_currency, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO order_costs (order_id, cost, ml_fee_pct, notes, logistic_mode, weight_kg, gain, ml_envio, ml_neto, iibb, row_color, manual_cost_input, manual_cost_currency, dollar_rate, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(order_id) DO UPDATE SET
        cost = excluded.cost,
        ml_fee_pct = excluded.ml_fee_pct,
@@ -367,8 +371,9 @@ export function upsertOrderCost(
        row_color = excluded.row_color,
        manual_cost_input = excluded.manual_cost_input,
        manual_cost_currency = excluded.manual_cost_currency,
+       dollar_rate = excluded.dollar_rate,
        updated_at = excluded.updated_at`
-  ).run(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency, Date.now());
+  ).run(orderId, cost, mlFeePct, notes, logisticMode, weightKg, gain, mlEnvio, mlNeto, iibb, rowColor, manualCostInput, manualCostCurrency, dollarRate, Date.now());
 }
 
 export function deleteOrderCost(orderId: number): void {

@@ -5,18 +5,28 @@ import { Calculator, Copy, Check, RefreshCw, MessageCircle, GripVertical, X, Tre
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { formatMoney } from "@/lib/format";
+import { IVA_RATE } from "@/lib/pricing";
+import {
+  calculateMLPrice,
+  priceWithMLMonthlyFee,
+  breakdownMLPrice,
+  breakdownMLMonthlyFee,
+  getMarginByPrice,
+  getCalculatedWeightKg,
+  LBS_TO_KG,
+  ENVIO_ML_ARS,
+  PSYCHOLOGICAL_STEP,
+  PSYCHOLOGICAL_PAD,
+  SHIPPING_COST_PER_KG,
+  type MLPriceBreakdown,
+} from "@/lib/price";
 import { cn } from "@/lib/utils";
 
-const SHIPPING_PER_KG = 18;
 const HANDLING_USD = 7;
 const DERECHOS_RATE = 0.21;
-const IVA_RATE = 0.21;
 const ML_COMISION_CON_IVA = 0.242;
-const LBS_TO_KG = 0.453592;
-const PSYCHOLOGICAL_STEP = 5000;
-const PSYCHOLOGICAL_PAD = 990;
 
-interface PriceBreakdown {
+interface WhatsPriceBreakdown {
   dealer_price_usd: number;
   weight_lbs: number;
   weight_kg: number;
@@ -31,51 +41,38 @@ interface PriceBreakdown {
   dollar_rate: number;
   neto_ars: number;
   iva_ars: number;
-  comision_ml_ars: number;
   precio_bruto_ars: number;
   precio_final_ars: number;
 }
 
-function getMargin(dealerPrice: number): number {
-  let baseMargin: number;
-  if (dealerPrice <= 50) baseMargin = 0.33;
-  else if (dealerPrice <= 100) baseMargin = 0.28;
-  else if (dealerPrice <= 200) baseMargin = 0.23;
-  else if (dealerPrice <= 300) baseMargin = 0.16;
-  else if (dealerPrice <= 400) baseMargin = 0.13;
-  else if (dealerPrice <= 500) baseMargin = 0.10;
-  else baseMargin = 0.08;
-  return baseMargin * 1.175;
-}
-
-function calculatePrice(dealerPrice: number, weightLbs: number, dollarRate: number, canal: "ml" | "whats"): PriceBreakdown {
+function calculateWhatsResult(
+  dealerPrice: number,
+  weightLbs: number,
+  dollarRate: number
+): WhatsPriceBreakdown {
+  const { totalWeightKg, surchargeUsed } = getCalculatedWeightKg(weightLbs);
   const weightKg = weightLbs * LBS_TO_KG;
-  const surcharge = weightKg < 2 ? 0.2 : 0.6;
-  const totalWeightKg = weightKg + surcharge;
 
   const derechos = dealerPrice * DERECHOS_RATE;
-  const flete = totalWeightKg * SHIPPING_PER_KG;
+  const flete = totalWeightKg * SHIPPING_COST_PER_KG;
   const handling = HANDLING_USD;
   const costoTotal = dealerPrice + derechos + flete + handling;
 
-  const margin = getMargin(dealerPrice);
+  const margin = getMarginByPrice(dealerPrice);
   const costoConGanancia = costoTotal * (1 + margin);
 
   const netoARS = costoConGanancia * dollarRate;
   const ivaARS = netoARS * IVA_RATE;
   const netoConIVA = netoARS + ivaARS;
 
-  const precioBruto = canal === "ml"
-    ? netoConIVA / (1 - ML_COMISION_CON_IVA)
-    : netoConIVA;
-
+  const precioBruto = netoConIVA;
   const precioFinal = Math.round(precioBruto / PSYCHOLOGICAL_STEP) * PSYCHOLOGICAL_STEP + PSYCHOLOGICAL_PAD;
 
   return {
     dealer_price_usd: dealerPrice,
     weight_lbs: weightLbs,
     weight_kg: weightKg,
-    surcharge_kg: surcharge,
+    surcharge_kg: surchargeUsed,
     total_weight_kg: totalWeightKg,
     derechos_usd: derechos,
     flete_usd: flete,
@@ -86,7 +83,6 @@ function calculatePrice(dealerPrice: number, weightLbs: number, dollarRate: numb
     dollar_rate: dollarRate,
     neto_ars: netoARS,
     iva_ars: ivaARS,
-    comision_ml_ars: canal === "ml" ? precioBruto * ML_COMISION_CON_IVA : 0,
     precio_bruto_ars: precioBruto,
     precio_final_ars: precioFinal,
   };
@@ -158,11 +154,11 @@ export function PriceCalculator() {
   const dollarValue = dollarBlue ?? 0;
 
   const mlResult = dealerNum > 0 && lbsNum > 0 && dollarValue > 0
-    ? calculatePrice(dealerNum, lbsNum, dollarValue, "ml")
+    ? breakdownMLMonthlyFee(dealerNum, lbsNum, dollarValue)
     : null;
 
   const whatsResult = dealerNum > 0 && lbsNum > 0 && dollarValue > 0
-    ? calculatePrice(dealerNum, lbsNum, dollarValue, "whats")
+    ? calculateWhatsResult(dealerNum, lbsNum, dollarValue)
     : null;
 
   // Calculate WhatsApp price with custom margin multiplier
@@ -178,10 +174,18 @@ export function PriceCalculator() {
     return precioFinal;
   };
 
+  // Ganancia REAL neta ML: coincide con el modelo de lib/pricing.ts
+  const netGainMl = (r: MLPriceBreakdown): number =>
+    r.neto_final_ars - r.costo_total_usd * dollarValue;
+
+  // WhatsApp: cobrás el precio directo; el 21% es IVA (AFIP); el resto menos costo.
+  const netGainWhats = (price: number, costoUsd: number): number =>
+    price / (1 + IVA_RATE) - costoUsd * dollarValue;
+
   const whatsPrices = WHATS_PRESETS.map(p => ({
     ...p,
     price: calculateWhatsPrice(p.multiplier),
-    gain: calculateWhatsPrice(p.multiplier) - (whatsResult?.costo_total_usd ?? 0) * dollarValue * 1.21,
+    gain: netGainWhats(calculateWhatsPrice(p.multiplier), whatsResult?.costo_total_usd ?? 0),
   }));
 
   const copyToClipboard = (price: number, setCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -356,15 +360,15 @@ export function PriceCalculator() {
               </div>
               <div className="text-center min-h-[90px] flex flex-col justify-center">
                 <p className="text-3xl xl:text-4xl font-black font-mono text-primary leading-tight truncate">
-                  {formatMoney(mlResult.precio_final_ars, "ARS")}
+                  {formatMoney(mlResult.final_price_ars, "ARS")}
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Ganancia: {formatMoney(mlResult.precio_final_ars - (mlResult.costo_total_usd * dollarValue * 1.21), "ARS")}
+                  Ganancia: {formatMoney(netGainMl(mlResult), "ARS")}
                 </p>
               </div>
               <div className="flex gap-2">
                 <Button
-                  onClick={() => copyToClipboard(mlResult.precio_final_ars, setCopiedMl)}
+                  onClick={() => copyToClipboard(mlResult.final_price_ars, setCopiedMl)}
                   variant="outline"
                   size="sm"
                   className="flex-1 gap-2 h-11"
@@ -374,7 +378,7 @@ export function PriceCalculator() {
                 </Button>
                 <Button
                   onClick={() => { setActiveBreakdown(activeBreakdown === "ml" ? null : "ml"); setShowBreakdown(true); }}
-                  variant={activeBreakdown === "ml" ? "default" : "outline"}
+                  variant={activeBreakdown === "ml" ? "primary" : "outline"}
                   size="sm"
                   className="h-11 px-4"
                 >
@@ -437,7 +441,7 @@ export function PriceCalculator() {
                 </Button>
                 <Button
                   onClick={() => { setActiveBreakdown(activeBreakdown === "whats" ? null : "whats"); setShowBreakdown(true); }}
-                  variant={activeBreakdown === "whats" ? "default" : "outline"}
+                  variant={activeBreakdown === "whats" ? "primary" : "outline"}
                   size="sm"
                   className="h-11 px-4"
                 >
@@ -463,25 +467,32 @@ export function PriceCalculator() {
             {activeBreakdown === "ml" && mlResult && (
               <div className="space-y-1.5 text-xs">
                 <BreakdownRow label="Precio dealer" value={`USD ${mlResult.dealer_price_usd.toFixed(2)}`} />
-                <BreakdownRow label="Peso" value={`${mlResult.weight_lbs} lbs = ${mlResult.weight_kg.toFixed(2)} kg`} />
-                <BreakdownRow label="Surcharge flete" value={`+${mlResult.surcharge_kg.toFixed(2)} kg`} />
-                <BreakdownRow label="Peso total" value={`${mlResult.total_weight_kg.toFixed(2)} kg`} />
+                <BreakdownRow label="Peso usado" value={`${mlResult.weight_kg_used.toFixed(2)} kg (surcharge +${mlResult.surcharge_kg.toFixed(2)} kg)`} />
                 <div className="border-t border-border/60 pt-1.5 mt-1.5">
-                  <BreakdownRow label="Derechos 21%" value={`USD ${mlResult.derechos_usd.toFixed(2)}`} />
-                  <BreakdownRow label={`Flete (${mlResult.total_weight_kg.toFixed(2)}kg × $${SHIPPING_PER_KG})`} value={`USD ${mlResult.flete_usd.toFixed(2)}`} />
-                  <BreakdownRow label="Handling" value={`USD ${mlResult.handling_usd.toFixed(2)}`} />
+                  <BreakdownRow label="Derechos 21%" value={`USD ${mlResult.derechos_estadistica_usd.toFixed(2)}`} />
+                  <BreakdownRow label={`Flete (${mlResult.weight_kg_used.toFixed(2)}kg × $${SHIPPING_COST_PER_KG})`} value={`USD ${mlResult.flete_usd.toFixed(2)}`} />
                   <BreakdownRow label="Costo total USD" value={`USD ${mlResult.costo_total_usd.toFixed(2)}`} bold />
                 </div>
                 <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label={`Margin (${mlResult.margin_pct.toFixed(1)}%)`} value={`USD ${mlResult.costo_con_ganancia_usd.toFixed(2)}`} />
+                  <BreakdownRow label={`Margin (${mlResult.margin_applied_pct.toFixed(1)}%)`} value={`USD ${mlResult.costo_con_ganancia_usd.toFixed(2)}`} />
                   <BreakdownRow label="Conversión ARS" value={`USD × ${dollarValue}`} />
-                  <BreakdownRow label="Neto desired" value={formatMoney(mlResult.neto_ars, "ARS")} />
-                  <BreakdownRow label="IVA 21%" value={formatMoney(mlResult.iva_ars, "ARS")} />
                 </div>
                 <div className="border-t border-border/60 pt-1.5">
+                  <BreakdownRow label="Fracción retenida" value={`${(mlResult.retained_fraction * 100).toFixed(2)}%`} />
+                  <BreakdownRow label="IVA débito" value={formatMoney(mlResult.iva_debito_ars, "ARS")} isNegative />
                   <BreakdownRow label="Comisión ML 24.2%" value={formatMoney(mlResult.comision_ml_ars, "ARS")} isNegative />
-                  <BreakdownRow label="Bruto ARS" value={formatMoney(mlResult.precio_bruto_ars, "ARS")} />
-                  <BreakdownRow label="Redondeo" value={`→ ${formatMoney(mlResult.precio_final_ars, "ARS")}`} bold />
+                  <BreakdownRow label="Percep. s/comisión 3%" value={formatMoney(mlResult.percep_comision_ars, "ARS")} isNegative />
+                  <BreakdownRow label="Cuotas 6%" value={formatMoney(mlResult.cuotas_ars, "ARS")} isNegative />
+                  <BreakdownRow label="Percep. IVA 1%" value={formatMoney(mlResult.percep_iva_ars, "ARS")} isNegative />
+                  <BreakdownRow label="IIBB 0.25%" value={formatMoney(mlResult.iibb_ars, "ARS")} isNegative />
+                </div>
+                <div className="border-t border-border/60 pt-1.5">
+                  <BreakdownRow label="Envío ML" value={formatMoney(mlResult.envio_ml_ars, "ARS")} isNegative />
+                  <BreakdownRow label="Precio final" value={formatMoney(mlResult.final_price_ars, "ARS")} bold />
+                </div>
+                <div className="border-t border-border/60 pt-1.5">
+                  <BreakdownRow label="Neto final (post-ML)" value={formatMoney(mlResult.neto_final_ars, "ARS")} />
+                  <BreakdownRow label="Ganancia estimada" value={formatMoney(netGainMl(mlResult), "ARS")} />
                 </div>
               </div>
             )}
@@ -493,7 +504,7 @@ export function PriceCalculator() {
                 <BreakdownRow label="Peso total" value={`${whatsResult.total_weight_kg.toFixed(2)} kg`} />
                 <div className="border-t border-border/60 pt-1.5 mt-1.5">
                   <BreakdownRow label="Derechos 21%" value={`USD ${whatsResult.derechos_usd.toFixed(2)}`} />
-                  <BreakdownRow label={`Flete (${whatsResult.total_weight_kg.toFixed(2)}kg × $${SHIPPING_PER_KG})`} value={`USD ${whatsResult.flete_usd.toFixed(2)}`} />
+                  <BreakdownRow label={`Flete (${whatsResult.total_weight_kg.toFixed(2)}kg × $${SHIPPING_COST_PER_KG})`} value={`USD ${whatsResult.flete_usd.toFixed(2)}`} />
                   <BreakdownRow label="Handling" value={`USD ${whatsResult.handling_usd.toFixed(2)}`} />
                   <BreakdownRow label="Costo total USD" value={`USD ${whatsResult.costo_total_usd.toFixed(2)}`} bold />
                 </div>

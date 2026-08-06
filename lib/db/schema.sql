@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS order_costs (
   ml_envio REAL,
   ml_neto REAL,
   iibb REAL,
+  -- Cotización USD (ARS/USD) usada al guardar: courier y costo USD→ARS
+  dollar_rate REAL,
   row_color TEXT,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );

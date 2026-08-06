@@ -18,6 +18,7 @@ import {
 import { Input } from "./ui/input";
 import { OrderDetailModal } from "./order-detail-modal";
 import { formatMoney, formatDateTime, translateStatus } from "@/lib/format";
+import { calcMlNeto, gainForOrder, isIvaEra } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import type { Order } from "@/lib/db/types";
 import { syncOrdersAction } from "@/app/actions/sync-orders";
@@ -35,6 +36,7 @@ type CostData = {
   ml_envio: number | null;
   ml_neto: number | null;
   iibb: number | null;
+  dollar_rate: number | null;
   manual_cost_input?: string | null;
   manual_cost_currency?: string | null;
 };
@@ -62,8 +64,6 @@ const ALL_STATUSES = [
 ];
 
 const PAGE_SIZE = 25;
-const USD_PER_KG = 15;
-const DEFAULT_DOLLAR_RATE = 1600;
 
 function getRangeFromMode(mode: RangeMode): { fromMs: number; toMs: number } {
   const now = new Date();
@@ -436,17 +436,20 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
               ) : (
                 data?.orders.map((order) => {
                   const cost = costMap[order.id];
-                  const saleFee = order.sale_fee != null
-                    ? order.sale_fee
-                    : order.total_amount * 0.19;
-                  const mlEnvio = cost?.ml_envio ?? 0;
-                  const iibb = order.total_amount * 0.0025;
-                  const netSale = order.total_amount - saleFee - mlEnvio - iibb;
-                  const calculatedGain = netSale - (cost?.cost ?? 0);
+                  // Ganancia manual siempre prioriza. Si no hay: fórmula nueva
+                  // desde ago-2026 (era IVA), fórmula simple antes de ago-2026.
                   const gain = cost?.gain != null
                     ? cost.gain
                     : cost
-                    ? calculatedGain
+                    ? gainForOrder(order.date_created, {
+                        totalAmount: order.total_amount,
+                        saleFee: order.sale_fee,
+                        mlFeePct: cost.ml_fee_pct,
+                        costARS: cost.cost,
+                        mlEnvio: cost.ml_envio,
+                        weightKg: cost.weight_kg,
+                        dollarRate: cost.dollar_rate,
+                      })
                     : null;
                   return (
                     <TR key={order.id} onClick={() => openDetail(order)}>
@@ -566,17 +569,18 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
                         </span>
                       </TD>
                       <TD className="text-right">
-                        {(() => {
-                          const envio = cost?.ml_envio ?? 0;
-                          const iibb = cost?.iibb ?? (order.total_amount * 0.0025);
-                          const saleFee = order.sale_fee ?? (order.total_amount * 0.19);
-                          const neto = order.total_amount - saleFee - envio - iibb;
-                          return (
-                            <span className="text-base font-semibold tabular-nums text-muted-foreground">
-                              {formatMoney(neto, order.currency_id)}
-                            </span>
-                          );
-                        })()}
+                        <span className="text-base font-semibold tabular-nums text-muted-foreground">
+                          {formatMoney(
+                            calcMlNeto(
+                              order.total_amount,
+                              order.sale_fee,
+                              // Fallback de comisión: 19% antes de ago-2026, 24.2% desde ago-2026
+                              cost?.ml_fee_pct ?? (isIvaEra(order.date_created) ? null : 19),
+                              cost?.ml_envio
+                            ),
+                            order.currency_id
+                          )}
+                        </span>
                       </TD>
                       <TD className="text-right">
                         {gain == null ? (

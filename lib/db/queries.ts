@@ -1,5 +1,6 @@
 import { getDb } from "./index";
 import type { Order, OrderItem, OrderPayment, OrderShipping } from "./types";
+import { gainForOrder } from "../pricing";
 
 /**
  * Order statistics query layer.
@@ -485,10 +486,6 @@ export interface MonthlyGain {
   totalGain: number;
 }
 
-const USD_PER_KG = 15;
-const DEFAULT_DOLLAR_RATE = 1600;
-const ENVIO_FIJO = 7000;
-
 export function getMonthlyGains(fromMs: number, toMs: number): MonthlyGain[] {
   const db = getDb();
 
@@ -497,6 +494,7 @@ export function getMonthlyGains(fromMs: number, toMs: number): MonthlyGain[] {
       `SELECT
          strftime('%Y-%m', o.date_created / 1000, 'unixepoch', '-180 minutes') as month,
          o.id as order_id,
+         o.date_created,
          o.total_amount,
          o.sale_fee,
          o.status,
@@ -505,7 +503,8 @@ export function getMonthlyGains(fromMs: number, toMs: number): MonthlyGain[] {
          oc.weight_kg,
          oc.ml_fee_pct,
          oc.gain as stored_gain,
-         oc.ml_envio
+         oc.ml_envio,
+         oc.dollar_rate
        FROM orders o
        INNER JOIN order_costs oc ON o.id = oc.order_id
        WHERE o.date_created BETWEEN ? AND ?
@@ -515,6 +514,7 @@ export function getMonthlyGains(fromMs: number, toMs: number): MonthlyGain[] {
     .all(fromMs, toMs) as Array<{
       month: string;
       order_id: number;
+      date_created: number;
       total_amount: number;
       sale_fee: number | null;
       status: string;
@@ -523,6 +523,7 @@ export function getMonthlyGains(fromMs: number, toMs: number): MonthlyGain[] {
       ml_fee_pct: number | null;
       stored_gain: number | null;
       ml_envio: number | null;
+      dollar_rate: number | null;
     }>;
 
   const monthMap = new Map<string, MonthlyGain>();
@@ -541,18 +542,19 @@ export function getMonthlyGains(fromMs: number, toMs: number): MonthlyGain[] {
     if (row.stored_gain == null && row.cost == null) continue;
 
     const m = monthMap.get(row.month)!;
-    const netSalePrice = row.total_amount / 1.21;
-    const mlFeeAmount = row.sale_fee ?? row.total_amount * ((row.ml_fee_pct ?? 15) / 100);
-    const percepcion1 = row.total_amount * 0.01;
-    const percepcion3 = mlFeeAmount * 0.03;
-    const iibb = netSalePrice * 0.18;
-    const mlEnvio = row.ml_envio ?? ENVIO_FIJO;
-    const cuotasCost = row.total_amount * 0.06;
-    const courierARS = (row.weight_kg ?? 0) * USD_PER_KG * DEFAULT_DOLLAR_RATE;
-
+    // Ganancia manual prioriza. Si no: fórmula nueva desde ago-2026
+    // (era IVA), fórmula simple antes de ago-2026 (lib/pricing)
     const orderGain = row.stored_gain != null
       ? row.stored_gain
-      : netSalePrice - percepcion1 - percepcion3 - iibb - mlFeeAmount - mlEnvio - cuotasCost - courierARS - row.cost!;
+      : gainForOrder(row.date_created, {
+          totalAmount: row.total_amount,
+          saleFee: row.sale_fee,
+          mlFeePct: row.ml_fee_pct,
+          costARS: row.cost!,
+          mlEnvio: row.ml_envio,
+          weightKg: row.weight_kg,
+          dollarRate: row.dollar_rate,
+        });
 
     m.orderCount++;
     m.totalSales += row.total_amount;

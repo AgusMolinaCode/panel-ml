@@ -22,6 +22,14 @@ import {
 import { Table, THead, TBody, TR, TH, TD } from "./ui/table";
 import { formatMoney, formatDateTime, translateStatus } from "@/lib/format";
 import type { Order, OrderItem, OrderPayment, OrderShipping, OrderCost } from "@/lib/db/types";
+import {
+  COURIER_USD_PER_KG,
+  DEFAULT_ML_FEE_PCT,
+  DOLLAR_BLUE_DEFAULT,
+  calcIibb,
+  calcMlNeto,
+  calculateOrderGain,
+} from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -29,10 +37,6 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
-
-const DEFAULT_ML_FEE_PCT = 15;
-const USD_PER_KG = 15;
-const DEFAULT_DOLLAR_RATE = 1600;
 
 export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const [costData, setCostData] = React.useState<OrderCost | null>(null);
@@ -43,26 +47,31 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   
   const [mlEnvioInput, setMlEnvioInput] = React.useState("7000");
   const [weightKgInput, setWeightKgInput] = React.useState("0.5");
-  const [dollarOfficialInput, setDollarOfficialInput] = React.useState(String(DEFAULT_DOLLAR_RATE));
+  const [dollarOfficialInput, setDollarOfficialInput] = React.useState(String(DOLLAR_BLUE_DEFAULT));
   const [gainInput, setGainInput] = React.useState("");
   const [manualCostInput, setManualCostInput] = React.useState("");
   const [costError, setCostError] = React.useState<string | null>(null);
   const [copiedSku, setCopiedSku] = React.useState(false);
   const [costMode, setCostMode] = React.useState<"product" | "manual" | "manualGain" | null>(null);
 
+  // Cotización dólar cacheada (blue + 50). Se pide una sola vez por sesión del modal
+  // y se usa tanto para el input como para convertir el costo guardado → sin race condition.
+  const dollarPromiseRef = React.useRef<Promise<number> | null>(null);
+  function fetchDollarRate(): Promise<number> {
+    if (!dollarPromiseRef.current) {
+      dollarPromiseRef.current = fetch("https://dolarapi.com/v1/dolares/blue")
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error("dollar api"))))
+        .then((data: { venta: number }) => data.venta + 50)
+        .catch(() => DOLLAR_BLUE_DEFAULT);
+    }
+    return dollarPromiseRef.current;
+  }
+
   React.useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("https://dolarapi.com/v1/dolares/blue");
-        if (cancelled) return;
-        if (res.ok) {
-          const data = (await res.json()) as { venta: number };
-          setDollarOfficialInput(String(data.venta + 50));
-        }
-      } catch {
-      }
-    })();
+    void fetchDollarRate().then((rate) => {
+      if (!cancelled) setDollarOfficialInput(String(rate));
+    });
     return () => {
       cancelled = true;
     };
@@ -82,11 +91,19 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
     setCostError(null);
     (async () => {
       try {
+        // Esperamos la cotización ANTES de convertir el costo ARS → USD.
+        // Si hay un dólar guardado para esta orden, tiene prioridad: así el
+        // breakdown reabre con exactamente los mismos números con que se guardó.
+        const liveDollar = await fetchDollarRate();
         const res = await fetch(`/api/orders/${order.id}/cost`);
         const data = (await res.json()) as { cost: OrderCost | null };
         if (cancelled) return;
+        const dollar = data.cost?.dollar_rate != null && data.cost.dollar_rate > 0
+          ? data.cost.dollar_rate
+          : liveDollar;
         setCostData(data.cost);
-        setCostInput(data.cost ? String(data.cost.cost / dollarOfficial) : "0");
+        setDollarOfficialInput(String(dollar));
+        setCostInput(data.cost ? String(data.cost.cost / dollar) : "0");
         setFeeInput(data.cost ? String(data.cost.ml_fee_pct) : String(DEFAULT_ML_FEE_PCT));
         setGainInput("");
         setMlEnvioInput(data.cost?.ml_envio != null ? String(data.cost.ml_envio) : "7000");
@@ -135,52 +152,40 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const feePct = parseFloat(feeInput) || 0;
   const mlEnvio = parseFloat(mlEnvioInput) || 0;
   const weightKg = parseFloat(weightKgInput) || 0;
-  const dollarOfficial = parseFloat(dollarOfficialInput) || DEFAULT_DOLLAR_RATE;
+  const dollarOfficial = parseFloat(dollarOfficialInput) || DOLLAR_BLUE_DEFAULT;
 
   const saleFeeFromApi = order.sale_fee ?? null;
-  const mlFeeAmount =
-    saleFeeFromApi != null
-      ? saleFeeFromApi
-      : order.total_amount * (feePct / 100);
-
   const totalAmount = order.total_amount;
-  // Precio neto sin IVA (Precio de venta / 1.21)
-  const netSalePrice = totalAmount / 1.21;
 
   // Costos en ARS
   const productCostARS = costRaw * dollarOfficial;
-  const percepcion1 = netSalePrice * 0.01;
-  const percepcion3 = mlFeeAmount * 0.03;
-  const iibb = netSalePrice * 0.0025;
-  const importRights18 = netSalePrice * 0.18;
-  const cuotasCost = netSalePrice * 0.06;
-  const courierCostUSD = weightKg * USD_PER_KG;
-  const courierCostARS = courierCostUSD * dollarOfficial;
-
-  // Ganancia calculada: NETO - todos los componentes
-  const calculatedGain =
-    netSalePrice
-    - mlFeeAmount
-    - cuotasCost
-    - percepcion1
-    - percepcion3
-    - iibb
-    - importRights18
-    - productCostARS
-    - mlEnvio
-    - courierCostARS;
-
   const manualCostRaw = parseFloat(manualCostInput) || 0;
   const manualCostARS = manualCostRaw * dollarOfficial;
-  const gain = (() => {
-    if (costMode === null) return calculatedGain;
-    if (costMode === "manualGain") return parseFloat(gainInput) || 0;
-    if (costMode === "manual") {
-      // En modo manual: NETO ML - costo manual
-      return netSalePrice - mlFeeAmount - cuotasCost - percepcion1 - percepcion3 - iibb - importRights18 - manualCostARS - mlEnvio - courierCostARS;
-    }
-    return calculatedGain;
-  })();
+  const activeCostARS = costMode === "manual" ? manualCostARS : productCostARS;
+
+  // Cálculo unificado (lib/pricing): NETO − comisión − cuotas − percepciones
+  // − IIBB − derechos − costo − envío − courier
+  const breakdown = calculateOrderGain({
+    totalAmount,
+    saleFee: saleFeeFromApi,
+    mlFeePct: feePct,
+    costARS: activeCostARS,
+    mlEnvio,
+    weightKg,
+    dollarRate: dollarOfficial,
+  });
+
+  const netSalePrice = breakdown.netSalePrice;
+  const mlFeeAmount = breakdown.mlFeeAmount;
+  const percepcion1 = breakdown.percepcionIva;
+  const percepcion3 = breakdown.percepcionComision;
+  const iibb = breakdown.iibb;
+  const importRights = breakdown.derechosImport;
+  const cuotasCost = breakdown.cuotasCost;
+  const courierCostUSD = breakdown.courierCostUSD;
+  const courierCostARS = breakdown.courierCostARS;
+
+  const gain = costMode === "manualGain" ? parseFloat(gainInput) || 0 : breakdown.gain;
 
   // Margen sobre precio neto
   const marginPct = netSalePrice > 0 ? (gain / netSalePrice) * 100 : 0;
@@ -190,22 +195,22 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
     setSaving(true);
     setCostError(null);
     try {
-      const mlNeto = netSalePrice - mlFeeAmount - mlEnvio - (netSalePrice * 0.0025);
-      const manualCostRaw = parseFloat(manualCostInput) || 0;
-      const manualCostARS = manualCostRaw * dollarOfficial;
+      const mlNeto = calcMlNeto(totalAmount, saleFeeFromApi, feePct, mlEnvio);
       const gainToSave = (() => {
         if (costMode === "manualGain") return parseFloat(gainInput) || 0;
-        if (costMode === "manual") return manualCostRaw > 0 ? mlNeto - manualCostARS : null;
+        // Guardamos la MISMA ganancia que muestra el cálculo en vivo (todos los descuentos)
+        if (costMode === "manual") return manualCostRaw > 0 ? breakdown.gain : null;
         return undefined;
       })();
 
       const body: Record<string, unknown> = {
         cost: costMode === "manual" ? manualCostARS : productCostARS,
         ml_fee_pct: feePct,
-        ml_envio: mlEnvio > 0 ? mlEnvio : null,
+        ml_envio: mlEnvio,
         weight_kg: weightKg > 0 ? weightKg : null,
-        iibb: order.total_amount * 0.0025,
+        iibb: calcIibb(totalAmount),
         ml_neto: mlNeto,
+        dollar_rate: dollarOfficial,
       };
       if (costMode === null) {
         body.gain = null;
@@ -393,13 +398,13 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                 onChange={setWeightKgInput}
                 placeholder="0"
                 suffix="kg"
-                hint={`${USD_PER_KG} USD/kg × ${formatMoney(dollarOfficial, "ARS")}/USD = ${formatMoney(USD_PER_KG * dollarOfficial, "ARS")}/kg`}
+                hint={`${COURIER_USD_PER_KG} USD/kg × ${formatMoney(dollarOfficial, "ARS")}/USD = ${formatMoney(COURIER_USD_PER_KG * dollarOfficial, "ARS")}/kg`}
               />
               <NumberField
                 label="Precio del Dólar (ARS)"
                 value={dollarOfficialInput}
                 onChange={setDollarOfficialInput}
-                placeholder={String(DEFAULT_DOLLAR_RATE)}
+                placeholder={String(DOLLAR_BLUE_DEFAULT)}
                 suffix="ARS/USD"
               />
               <NumberField
@@ -518,7 +523,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                 percepcion1={percepcion1}
                 percepcion3={percepcion3}
                 iibb={iibb}
-                importRights18={importRights18}
+                importRights18={importRights}
                 mlEnvio={mlEnvio}
                 cuotasCost={cuotasCost}
                 courierCostUSD={courierCostUSD}
@@ -624,7 +629,7 @@ function Breakdown({
       <Row label="Percepción IVA (1%)" value={`− ${formatMoney(percepcion1, currency)}`} muted />
       <Row label="Percepción s/comisión (3%)" value={`− ${formatMoney(percepcion3, currency)}`} muted />
       <Row label="IIBB (0.25%)" value={`− ${formatMoney(iibb, currency)}`} muted />
-      <Row label="Derechos de Importación (18%)" value={`− ${formatMoney(importRights18, currency)}`} muted />
+      <Row label="Derechos de Importación (21% s/FOB)" value={`− ${formatMoney(importRights18, currency)}`} muted />
       <Row label="Costo producto" value={`− ${formatMoney(costNet, currency)}`} muted />
       <Row label="Envío ML" value={`− ${formatMoney(mlEnvio, currency)}`} muted />
       <Row

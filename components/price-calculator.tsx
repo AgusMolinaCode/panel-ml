@@ -1,90 +1,52 @@
 "use client";
 
 import * as React from "react";
-import { Calculator, Copy, Check, RefreshCw, MessageCircle, GripVertical, X, TrendingUp, Package } from "lucide-react";
+import { Calculator, Copy, Check, RefreshCw, MessageCircle, GripVertical, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { formatMoney } from "@/lib/format";
-import { IVA_RATE } from "@/lib/pricing";
 import {
-  calculateMLPrice,
-  priceWithMLMonthlyFee,
-  breakdownMLPrice,
   breakdownMLMonthlyFee,
-  getMarginByPrice,
-  getCalculatedWeightKg,
-  LBS_TO_KG,
-  ENVIO_ML_ARS,
-  PSYCHOLOGICAL_STEP,
-  PSYCHOLOGICAL_PAD,
   SHIPPING_COST_PER_KG,
+  LBS_TO_KG,
   type MLPriceBreakdown,
 } from "@/lib/price";
 import { cn } from "@/lib/utils";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 
-const HANDLING_USD = 7;
-const DERECHOS_RATE = 0.21;
-const ML_COMISION_CON_IVA = 0.242;
+const WHATS_MARGIN = 0.63; // 63% margen sobre precio dealer (sin flete, sin handling)
+const WHATS_TOTAL_MULTIPLIER = 1.63; // incluye derechos 21% + IVA 21% + margen 63%
 
 interface WhatsPriceBreakdown {
   dealer_price_usd: number;
-  weight_lbs: number;
-  weight_kg: number;
-  surcharge_kg: number;
-  total_weight_kg: number;
+  peso_usd: number;
   derechos_usd: number;
-  flete_usd: number;
-  handling_usd: number;
   costo_total_usd: number;
-  margin_pct: number;
-  costo_con_ganancia_usd: number;
+  margen_usd: number;
   dollar_rate: number;
-  neto_ars: number;
-  iva_ars: number;
-  precio_bruto_ars: number;
   precio_final_ars: number;
 }
 
 function calculateWhatsResult(
   dealerPrice: number,
-  weightLbs: number,
-  dollarRate: number
+  dollarRate: number,
+  multiplier = 1
 ): WhatsPriceBreakdown {
-  const { totalWeightKg, surchargeUsed } = getCalculatedWeightKg(weightLbs);
-  const weightKg = weightLbs * LBS_TO_KG;
-
-  const derechos = dealerPrice * DERECHOS_RATE;
-  const flete = totalWeightKg * SHIPPING_COST_PER_KG;
-  const handling = HANDLING_USD;
-  const costoTotal = dealerPrice + derechos + flete + handling;
-
-  const margin = getMarginByPrice(dealerPrice);
-  const costoConGanancia = costoTotal * (1 + margin);
-
-  const netoARS = costoConGanancia * dollarRate;
-  const ivaARS = netoARS * IVA_RATE;
-  const netoConIVA = netoARS + ivaARS;
-
-  const precioBruto = netoConIVA;
-  const precioFinal = Math.round(precioBruto / PSYCHOLOGICAL_STEP) * PSYCHOLOGICAL_STEP + PSYCHOLOGICAL_PAD;
+  // Fórmula simple: (precio dealer) * 1.63 * dolar
+  // Incluye: derechos 21% + IVA 21% + margen 63% (el 0.63)
+  // Sin flete (lo absorbe el cliente), sin handling
+  const costoTotalUsd = dealerPrice;
+  const margenUsd = costoTotalUsd * WHATS_MARGIN * multiplier;
+  const precioFinalArs = (costoTotalUsd + margenUsd) * dollarRate;
 
   return {
     dealer_price_usd: dealerPrice,
-    weight_lbs: weightLbs,
-    weight_kg: weightKg,
-    surcharge_kg: surchargeUsed,
-    total_weight_kg: totalWeightKg,
-    derechos_usd: derechos,
-    flete_usd: flete,
-    handling_usd: handling,
-    costo_total_usd: costoTotal,
-    margin_pct: margin * 100,
-    costo_con_ganancia_usd: costoConGanancia,
+    peso_usd: 0,
+    derechos_usd: dealerPrice * 0.21,
+    costo_total_usd: costoTotalUsd,
+    margen_usd: margenUsd,
     dollar_rate: dollarRate,
-    neto_ars: netoARS,
-    iva_ars: ivaARS,
-    precio_bruto_ars: precioBruto,
-    precio_final_ars: precioFinal,
+    precio_final_ars: precioFinalArs,
   };
 }
 
@@ -101,8 +63,6 @@ export function PriceCalculator() {
   const [dollarLoading, setDollarLoading] = React.useState(true);
   const [copiedMl, setCopiedMl] = React.useState(false);
   const [copiedWhats, setCopiedWhats] = React.useState(false);
-  const [showBreakdown, setShowBreakdown] = React.useState(false);
-  const [activeBreakdown, setActiveBreakdown] = React.useState<"ml" | "whats" | null>(null);
   const [whatsPreset, setWhatsPreset] = React.useState(1); // 0=oferta, 1=buen precio, 2=mejor, 3=sin oferta
 
   // Preset multipliers for WhatsApp (applied to the base margin)
@@ -157,36 +117,26 @@ export function PriceCalculator() {
     ? breakdownMLMonthlyFee(dealerNum, lbsNum, dollarValue)
     : null;
 
-  const whatsResult = dealerNum > 0 && lbsNum > 0 && dollarValue > 0
-    ? calculateWhatsResult(dealerNum, lbsNum, dollarValue)
+  const whatsResult = dealerNum > 0 && dollarValue > 0
+    ? calculateWhatsResult(dealerNum, dollarValue)
     : null;
-
-  // Calculate WhatsApp price with custom margin multiplier
-  const calculateWhatsPrice = (multiplier: number) => {
-    if (!whatsResult) return 0;
-    const baseMargin = whatsResult.margin_pct / 100;
-    const adjustedMargin = baseMargin * multiplier;
-    const costoConGanancia = whatsResult.costo_total_usd * (1 + adjustedMargin);
-    const netoARS = costoConGanancia * dollarValue;
-    const netoConIVA = netoARS * 1.21;
-    const precioBruto = netoConIVA;
-    const precioFinal = Math.round(precioBruto / PSYCHOLOGICAL_STEP) * PSYCHOLOGICAL_STEP + PSYCHOLOGICAL_PAD;
-    return precioFinal;
-  };
 
   // Ganancia REAL neta ML: coincide con el modelo de lib/pricing.ts
   const netGainMl = (r: MLPriceBreakdown): number =>
     r.neto_final_ars - r.costo_total_usd * dollarValue;
 
-  // WhatsApp: cobrás el precio directo; el 21% es IVA (AFIP); el resto menos costo.
-  const netGainWhats = (price: number, costoUsd: number): number =>
-    price / (1 + IVA_RATE) - costoUsd * dollarValue;
-
-  const whatsPrices = WHATS_PRESETS.map(p => ({
-    ...p,
-    price: calculateWhatsPrice(p.multiplier),
-    gain: netGainWhats(calculateWhatsPrice(p.multiplier), whatsResult?.costo_total_usd ?? 0),
-  }));
+  // WhatsApp: precio simple = dealerPrice * 1.63 * dolar
+  // ganancia = dealerPrice * 0.63 * dolar * multiplier
+  const whatsPrices = WHATS_PRESETS.map(p => {
+    const margenUsd = dealerNum * WHATS_MARGIN * p.multiplier;
+    const precio = (dealerNum + margenUsd) * dollarValue;
+    const gain = margenUsd * dollarValue;
+    return {
+      ...p,
+      price: precio,
+      gain: gain,
+    };
+  });
 
   const copyToClipboard = (price: number, setCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
     if (price <= 0) return;
@@ -343,203 +293,162 @@ export function PriceCalculator() {
         </div>
 
         {/* Results */}
-        {mlResult && whatsResult && (
-          <div className="grid grid-cols-2 gap-5">
-            {/* ML Premium */}
-            <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Calculator className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold">Mercado Libre</p>
-                    <p className="text-[10px] text-muted-foreground">Premium + 24.2% comision</p>
-                  </div>
+        {mlResult && (
+          <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Calculator className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">Mercado Libre</p>
+                  <p className="text-[10px] text-muted-foreground">Premium + 24.2% comision</p>
                 </div>
               </div>
-              <div className="text-center min-h-[90px] flex flex-col justify-center">
-                <p className="text-3xl xl:text-4xl font-black font-mono text-primary leading-tight truncate">
-                  {formatMoney(mlResult.final_price_ars, "ARS")}
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Ganancia: {formatMoney(netGainMl(mlResult), "ARS")}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => copyToClipboard(mlResult.final_price_ars, setCopiedMl)}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 gap-2 h-11"
-                >
-                  {copiedMl ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copiedMl ? "Copiado" : "Copiar"}
-                </Button>
-                <Button
-                  onClick={() => { setActiveBreakdown(activeBreakdown === "ml" ? null : "ml"); setShowBreakdown(true); }}
-                  variant={activeBreakdown === "ml" ? "primary" : "outline"}
-                  size="sm"
-                  className="h-11 px-4"
-                >
-                  <TrendingUp className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
-
-            {/* WhatsApp */}
-            <div className="rounded-xl border-2 border-green-500/20 bg-green-500/5 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-500/10 text-green-600">
-                    <MessageCircle className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <p className="text-base font-bold">WhatsApp</p>
-                    <p className="text-xs text-muted-foreground">Sin comision ML</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Preset buttons */}
-              <div className="grid grid-cols-4 gap-2">
-                {whatsPrices.map((preset, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setWhatsPreset(idx)}
-                    className={cn(
-                      "rounded-lg p-2 text-center transition-all border-2",
-                      whatsPreset === idx
-                        ? "bg-green-500/20 border-green-500 text-green-600"
-                        : "bg-muted/50 border-transparent hover:border-green-500/30"
-                    )}
-                  >
-                    <p className="text-[10px] font-medium truncate">{preset.name}</p>
-                    <p className="text-sm font-bold font-mono truncate">{formatMoney(preset.price, "ARS")}</p>
-                    <p className="text-[9px] text-muted-foreground truncate">+{formatMoney(preset.gain, "ARS")}</p>
-                  </button>
-                ))}
-              </div>
-
-              <div className="text-center min-h-[70px] flex flex-col justify-center">
-                <p className="text-3xl xl:text-4xl font-black font-mono text-green-600 leading-tight truncate">
-                  {formatMoney(whatsPrices[whatsPreset].price, "ARS")}
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Ganancia: {formatMoney(whatsPrices[whatsPreset].gain, "ARS")}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => copyToClipboard(whatsPrices[whatsPreset].price, setCopiedWhats)}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 gap-2 h-11"
-                >
-                  {copiedWhats ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copiedWhats ? "Copiado" : "Copiar"}
-                </Button>
-                <Button
-                  onClick={() => { setActiveBreakdown(activeBreakdown === "whats" ? null : "whats"); setShowBreakdown(true); }}
-                  variant={activeBreakdown === "whats" ? "primary" : "outline"}
-                  size="sm"
-                  className="h-11 px-4"
-                >
-                  <TrendingUp className="h-4 w-4" />
-                </Button>
-              </div>
+            <div className="text-center min-h-[90px] flex flex-col justify-center">
+              <p className="text-3xl xl:text-4xl font-black font-mono text-primary leading-tight truncate">
+                {formatMoney(mlResult.final_price_ars, "ARS")}
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Ganancia: {formatMoney(netGainMl(mlResult), "ARS")}
+              </p>
             </div>
+            <Button
+              onClick={() => copyToClipboard(mlResult.final_price_ars, setCopiedMl)}
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 h-11"
+            >
+              {copiedMl ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copiedMl ? "Copiado" : "Copiar"}
+            </Button>
+
+            <Accordion>
+              <AccordionItem value="ml">
+                <AccordionTrigger value="ml">Ver desglose de la cuenta</AccordionTrigger>
+                <AccordionContent value="ml">
+                  <div className="space-y-1.5 text-xs">
+                    <BreakdownRow label="Precio dealer" value={`USD ${mlResult.dealer_price_usd.toFixed(2)}`} />
+                    <BreakdownRow label="Peso usado" value={`${mlResult.weight_kg_used.toFixed(2)} kg (surcharge +${mlResult.surcharge_kg.toFixed(2)} kg)`} />
+                    <div className="border-t border-border/60 pt-1.5 mt-1.5">
+                      <BreakdownRow label="Derechos 21%" value={`USD ${mlResult.derechos_estadistica_usd.toFixed(2)}`} />
+                      <BreakdownRow label={`Flete (${mlResult.weight_kg_used.toFixed(2)}kg × $${SHIPPING_COST_PER_KG})`} value={`USD ${mlResult.flete_usd.toFixed(2)}`} />
+                      <BreakdownRow label="Costo total USD" value={`USD ${mlResult.costo_total_usd.toFixed(2)}`} bold />
+                    </div>
+                    <div className="border-t border-border/60 pt-1.5">
+                      <BreakdownRow label={`Margin (${mlResult.margin_applied_pct.toFixed(1)}%)`} value={`USD ${mlResult.costo_con_ganancia_usd.toFixed(2)}`} />
+                      <BreakdownRow label="Conversión ARS" value={`USD × ${dollarValue}`} />
+                    </div>
+                    <div className="border-t border-border/60 pt-1.5">
+                      <BreakdownRow label="Fracción retenida" value={`${(mlResult.retained_fraction * 100).toFixed(2)}%`} />
+                      <BreakdownRow label="IVA débito" value={formatMoney(mlResult.iva_debito_ars, "ARS")} isNegative />
+                      <BreakdownRow label="Comisión ML 24.2%" value={formatMoney(mlResult.comision_ml_ars, "ARS")} isNegative />
+                      <BreakdownRow label="Percep. s/comisión 3%" value={formatMoney(mlResult.percep_comision_ars, "ARS")} isNegative />
+                      <BreakdownRow label="Cuotas 6%" value={formatMoney(mlResult.cuotas_ars, "ARS")} isNegative />
+                      <BreakdownRow label="Percep. IVA 1%" value={formatMoney(mlResult.percep_iva_ars, "ARS")} isNegative />
+                      <BreakdownRow label="IIBB 0.25%" value={formatMoney(mlResult.iibb_ars, "ARS")} isNegative />
+                    </div>
+                    <div className="border-t border-border/60 pt-1.5">
+                      <BreakdownRow label="Envío ML" value={formatMoney(mlResult.envio_ml_ars, "ARS")} isNegative />
+                      <BreakdownRow label="Precio final" value={formatMoney(mlResult.final_price_ars, "ARS")} bold />
+                    </div>
+                    <div className="border-t border-border/60 pt-1.5">
+                      <BreakdownRow label="Neto final (post-ML)" value={formatMoney(mlResult.neto_final_ars, "ARS")} />
+                      <BreakdownRow label="Ganancia estimada" value={formatMoney(netGainMl(mlResult), "ARS")} />
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         )}
 
-        {/* Breakdown Panel */}
-        {showBreakdown && (activeBreakdown === "ml" || activeBreakdown === "whats") && (
-          <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+        {whatsResult && (
+          <div className="rounded-xl border-2 border-green-500/20 bg-green-500/5 p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold flex items-center gap-2">
-                <Package className="h-4 w-4" />
-                Breakdown {activeBreakdown === "ml" ? "Mercado Libre" : "WhatsApp"}
-              </p>
-              <button onClick={() => setShowBreakdown(false)} className="text-xs text-muted-foreground hover:text-foreground no-drag">
-                Cerrar
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-500/10 text-green-600">
+                  <MessageCircle className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-base font-bold">WhatsApp</p>
+                  <p className="text-xs text-muted-foreground">Sin comision ML · margen base</p>
+                </div>
+              </div>
             </div>
-            {activeBreakdown === "ml" && mlResult && (
-              <div className="space-y-1.5 text-xs">
-                <BreakdownRow label="Precio dealer" value={`USD ${mlResult.dealer_price_usd.toFixed(2)}`} />
-                <BreakdownRow label="Peso usado" value={`${mlResult.weight_kg_used.toFixed(2)} kg (surcharge +${mlResult.surcharge_kg.toFixed(2)} kg)`} />
-                <div className="border-t border-border/60 pt-1.5 mt-1.5">
-                  <BreakdownRow label="Derechos 21%" value={`USD ${mlResult.derechos_estadistica_usd.toFixed(2)}`} />
-                  <BreakdownRow label={`Flete (${mlResult.weight_kg_used.toFixed(2)}kg × $${SHIPPING_COST_PER_KG})`} value={`USD ${mlResult.flete_usd.toFixed(2)}`} />
-                  <BreakdownRow label="Costo total USD" value={`USD ${mlResult.costo_total_usd.toFixed(2)}`} bold />
-                </div>
-                <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label={`Margin (${mlResult.margin_applied_pct.toFixed(1)}%)`} value={`USD ${mlResult.costo_con_ganancia_usd.toFixed(2)}`} />
-                  <BreakdownRow label="Conversión ARS" value={`USD × ${dollarValue}`} />
-                </div>
-                <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label="Fracción retenida" value={`${(mlResult.retained_fraction * 100).toFixed(2)}%`} />
-                  <BreakdownRow label="IVA débito" value={formatMoney(mlResult.iva_debito_ars, "ARS")} isNegative />
-                  <BreakdownRow label="Comisión ML 24.2%" value={formatMoney(mlResult.comision_ml_ars, "ARS")} isNegative />
-                  <BreakdownRow label="Percep. s/comisión 3%" value={formatMoney(mlResult.percep_comision_ars, "ARS")} isNegative />
-                  <BreakdownRow label="Cuotas 6%" value={formatMoney(mlResult.cuotas_ars, "ARS")} isNegative />
-                  <BreakdownRow label="Percep. IVA 1%" value={formatMoney(mlResult.percep_iva_ars, "ARS")} isNegative />
-                  <BreakdownRow label="IIBB 0.25%" value={formatMoney(mlResult.iibb_ars, "ARS")} isNegative />
-                </div>
-                <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label="Envío ML" value={formatMoney(mlResult.envio_ml_ars, "ARS")} isNegative />
-                  <BreakdownRow label="Precio final" value={formatMoney(mlResult.final_price_ars, "ARS")} bold />
-                </div>
-                <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label="Neto final (post-ML)" value={formatMoney(mlResult.neto_final_ars, "ARS")} />
-                  <BreakdownRow label="Ganancia estimada" value={formatMoney(netGainMl(mlResult), "ARS")} />
-                </div>
-              </div>
-            )}
-            {activeBreakdown === "whats" && whatsResult && (
-              <div className="space-y-1.5 text-xs">
-                <BreakdownRow label="Precio dealer" value={`USD ${whatsResult.dealer_price_usd.toFixed(2)}`} />
-                <BreakdownRow label="Peso" value={`${whatsResult.weight_lbs} lbs = ${whatsResult.weight_kg.toFixed(2)} kg`} />
-                <BreakdownRow label="Surcharge flete" value={`+${whatsResult.surcharge_kg.toFixed(2)} kg`} />
-                <BreakdownRow label="Peso total" value={`${whatsResult.total_weight_kg.toFixed(2)} kg`} />
-                <div className="border-t border-border/60 pt-1.5 mt-1.5">
-                  <BreakdownRow label="Derechos 21%" value={`USD ${whatsResult.derechos_usd.toFixed(2)}`} />
-                  <BreakdownRow label={`Flete (${whatsResult.total_weight_kg.toFixed(2)}kg × $${SHIPPING_COST_PER_KG})`} value={`USD ${whatsResult.flete_usd.toFixed(2)}`} />
-                  <BreakdownRow label="Handling" value={`USD ${whatsResult.handling_usd.toFixed(2)}`} />
-                  <BreakdownRow label="Costo total USD" value={`USD ${whatsResult.costo_total_usd.toFixed(2)}`} bold />
-                </div>
-                <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label={`Margin (${whatsResult.margin_pct.toFixed(1)}%)`} value={`USD ${whatsResult.costo_con_ganancia_usd.toFixed(2)}`} />
-                  <BreakdownRow label="Conversión ARS" value={`USD × ${dollarValue}`} />
-                  <BreakdownRow label="Neto desired" value={formatMoney(whatsResult.neto_ars, "ARS")} />
-                  <BreakdownRow label="IVA 21%" value={formatMoney(whatsResult.iva_ars, "ARS")} />
-                </div>
-                <div className="border-t border-border/60 pt-1.5">
-                  <BreakdownRow label="Sin comisión ML" value="—" />
-                  <BreakdownRow label="Bruto ARS" value={formatMoney(whatsResult.precio_bruto_ars, "ARS")} />
-                  <BreakdownRow label="Redondeo" value={`→ ${formatMoney(whatsResult.precio_final_ars, "ARS")}`} bold />
-                </div>
-              </div>
-            )}
+
+            {/* Preset buttons */}
+            <div className="grid grid-cols-4 gap-2">
+              {whatsPrices.map((preset, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setWhatsPreset(idx)}
+                  className={cn(
+                    "rounded-lg p-2 text-center transition-all border-2",
+                    whatsPreset === idx
+                      ? "bg-green-500/20 border-green-500 text-green-600"
+                      : "bg-muted/50 border-transparent hover:border-green-500/30"
+                  )}
+                >
+                  <p className="text-[10px] font-medium truncate">{preset.name}</p>
+                  <p className="text-sm font-bold font-mono truncate">{formatMoney(preset.price, "ARS")}</p>
+                  <p className="text-[9px] text-muted-foreground truncate">+{formatMoney(preset.gain, "ARS")}</p>
+                </button>
+              ))}
+            </div>
+
+            <div className="text-center min-h-[70px] flex flex-col justify-center">
+              <p className="text-3xl xl:text-4xl font-black font-mono text-green-600 leading-tight truncate">
+                {formatMoney(whatsPrices[whatsPreset].price, "ARS")}
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Ganancia: {formatMoney(whatsPrices[whatsPreset].gain, "ARS")}
+              </p>
+            </div>
+            <Button
+              onClick={() => copyToClipboard(whatsPrices[whatsPreset].price, setCopiedWhats)}
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 h-11"
+            >
+              {copiedWhats ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copiedWhats ? "Copiado" : "Copiar"}
+            </Button>
+
+            <Accordion>
+              <AccordionItem value="whats">
+                <AccordionTrigger value="whats">Ver desglose de la cuenta</AccordionTrigger>
+                <AccordionContent value="whats">
+                  <div className="space-y-1.5 text-xs">
+                    <BreakdownRow label="Precio dealer USD" value={`USD ${whatsResult.dealer_price_usd.toFixed(2)}`} />
+                    <BreakdownRow label="Derechos 21%" value={`USD ${whatsResult.derechos_usd.toFixed(2)}`} />
+                    <div className="border-t border-border/60 pt-1.5 mt-1.5">
+                      <BreakdownRow label="Margen 63%" value={`USD ${whatsResult.margen_usd.toFixed(2)}`} />
+                      <BreakdownRow label="Conversión" value={`USD × ${dollarValue}`} />
+                    </div>
+                    <div className="border-t border-border/60 pt-1.5">
+                      <BreakdownRow label="Precio final" value={formatMoney(whatsResult.precio_final_ars, "ARS")} bold />
+                      <BreakdownRow label="Ganancia" value={formatMoney(whatsResult.margen_usd * dollarValue, "ARS")} />
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         )}
 
         {/* Empty state */}
-        {(!mlResult || !whatsResult) && dealerNum === 0 && lbsNum === 0 && (
+        {!mlResult && !whatsResult && dealerNum === 0 && (
           <div className="text-center py-10 text-sm text-muted-foreground">
             Ingresá precio dealer y peso para calcular
           </div>
         )}
 
-        {/* Warning if partial */}
-        {(dealerNum > 0 && lbsNum === 0) && (
+        {/* Warning if partial ML */}
+        {dealerNum > 0 && !mlResult && (
           <div className="text-center py-4 text-sm text-muted-foreground">
-            Falta ingresar el peso en libras
-          </div>
-        )}
-        {(dealerNum === 0 && lbsNum > 0) && (
-          <div className="text-center py-4 text-sm text-muted-foreground">
-            Falta ingresar el precio dealer
+            Falta ingresar el peso en libras para calcular ML
           </div>
         )}
       </div>

@@ -10,7 +10,7 @@ import { MonthlyGainsGrid } from "@/components/monthly-gains-grid";
 import { MonthlyIvaSummary } from "@/components/monthly-iva-summary";
 import { MonthlyExpenses } from "@/components/monthly-expenses";
 import { PriceCalculator } from "@/components/price-calculator";
-import { BarChart3, ShoppingCart, Wallet } from "lucide-react";
+import { BarChart3, ShoppingCart, Wallet, LogOut } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +57,15 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
           </p>
         </div>
         <ConnectionCard initialStatus={status} />
+        <form action="/api/auth/logout" method="POST">
+          <button
+            type="submit"
+            className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Salir
+          </button>
+        </form>
       </header>
 
       {/* Date range + KPIs + Próximos a Enviar */}

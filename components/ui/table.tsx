@@ -20,16 +20,18 @@ export const TBody: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   <tbody className="[&_tr:last-child]:border-0">{children}</tbody>
 );
 
-export const TR: React.FC<{ children: React.ReactNode; onClick?: () => void; style?: React.CSSProperties }> = ({
+export const TR: React.FC<{ children: React.ReactNode; onClick?: () => void; style?: React.CSSProperties; className?: string }> = ({
   children,
   onClick,
   style,
+  className,
 }) => (
   <tr
     className={cn(
       "border-b border-border/60 transition-colors",
       "hover:bg-muted/30",
-      onClick && "cursor-pointer"
+      onClick && "cursor-pointer",
+      className
     )}
     onClick={onClick}
     style={style}

@@ -23,11 +23,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const sortBy = (url.searchParams.get("sort") as OrdersQueryOptions["sortBy"]) ?? "date_created";
     const sortDir = (url.searchParams.get("dir") as OrdersQueryOptions["sortDir"]) ?? "desc";
 
+    const isNumericSearch = search && /^\d+$/.test(search.trim());
+    const isTextSearch = search && !isNumericSearch;
+
     const opts: OrdersQueryOptions = { limit, offset, sortBy, sortDir };
     if (!Number.isNaN(from) && from > 0) opts.fromMs = from;
     if (!Number.isNaN(to) && to > 0) opts.toMs = to;
     if (statusParam) opts.statuses = statusParam.split(",").map((s) => s.trim()).filter(Boolean);
-    if (search) opts.search = search;
+    if (search && isNumericSearch) opts.search = search;
 
     if (url.searchParams.get("latest") === "true") {
       const result = await queryOrders({ ...opts, limit: 1 });
@@ -37,17 +40,34 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    const result = await queryOrders(opts);
+    // For text search (item titles), fetch more orders and filter in-memory
+    const fetchLimit = isTextSearch ? 500 : limit;
+    const result = await queryOrders({ ...opts, limit: fetchLimit });
+
+    // Filter by item title when searching by text
+    let filteredOrders = result.orders;
+    if (isTextSearch) {
+      const term = search!.trim().toLowerCase();
+      filteredOrders = result.orders.filter((order) =>
+        order.items.some((item) => item.title.toLowerCase().includes(term))
+      );
+    }
 
     const costsMap: Record<number, object | null> = {};
-    if (result.orders.length > 0) {
-      const costs = await getOrderCostsBulk(result.orders.map((o) => o.id));
+    if (filteredOrders.length > 0) {
+      const costs = await getOrderCostsBulk(filteredOrders.map((o) => o.id));
       for (const [id, cost] of costs) {
         costsMap[id] = cost;
       }
     }
 
-    return NextResponse.json({ ...result, costs: costsMap });
+    return NextResponse.json({
+      orders: filteredOrders,
+      total: filteredOrders.length,
+      limit,
+      offset,
+      costs: costsMap,
+    });
   } catch (err) {
     if (err instanceof NotAuthenticatedError) {
       return NextResponse.json({ error: err.message }, { status: 401 });

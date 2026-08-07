@@ -302,7 +302,7 @@ export function PriceCalculator() {
                 </div>
                 <div>
                   <p className="text-sm font-bold">Mercado Libre</p>
-                  <p className="text-[10px] text-muted-foreground">Premium + 24.2% comision</p>
+                  <p className="text-[10px] text-muted-foreground">Premium + 21% comisión</p>
                 </div>
               </div>
             </div>
@@ -311,7 +311,7 @@ export function PriceCalculator() {
                 {formatMoney(mlResult.final_price_ars, "ARS")}
               </p>
               <p className="text-sm text-muted-foreground mt-2">
-                Ganancia: {formatMoney(netGainMl(mlResult), "ARS")}
+                Ganancia neta: {formatMoney(netGainMl(mlResult), "ARS")}
               </p>
             </div>
             <Button

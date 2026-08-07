@@ -122,13 +122,24 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   >({});
   const [copiedIds, setCopiedIds] = React.useState<Set<number>>(new Set());
   const [copiedSkus, setCopiedSkus] = React.useState<Set<string>>(new Set());
+  const [checkedOrders, setCheckedOrders] = React.useState<Set<number>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = localStorage.getItem("checked-orders");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const latestOrderIdRef = React.useRef<number | null>(null);
   const syncingRef = React.useRef(false);
+  const fetchDataRef = React.useRef<(() => Promise<void>) | undefined>(undefined);
   const fetchGenRef = React.useRef(0);
   const searchRef = React.useRef(search);
   searchRef.current = search;
 
   const fetchData = React.useCallback(async (): Promise<void> => {
+    fetchDataRef.current = fetchData;
     const gen = ++fetchGenRef.current;
     const isInitial = data === null;
     if (isInitial) setLoading(true);
@@ -179,10 +190,20 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     setOffset(0);
   }, [fromMs, toMs, statusFilter, search, sortBy, sortDir]);
 
-  // Fetch on mount and when core params change (offset, sort, range)
+  // Sync + fetch on mount; subsequent calls only fetch (when fetchData deps change)
   React.useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+    void handleSync();
+    // handleSync already calls fetchData internally when sync completes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-sync every 10 minutes while tab is open
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      void handleSync();
+    }, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Debounced search — typing won't spam fetches
   React.useEffect(() => {
@@ -220,6 +241,15 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     return () => window.removeEventListener("panel-ml:gains-changed", handler);
   }, []);
 
+  // Persist checked orders to localStorage
+  React.useEffect(() => {
+    try {
+      localStorage.setItem("checked-orders", JSON.stringify([...checkedOrders]));
+    } catch {
+      // ignore
+    }
+  }, [checkedOrders]);
+
   async function handleSync(): Promise<void> {
     if (syncingRef.current) return;
     syncingRef.current = true;
@@ -231,7 +261,7 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
         setError(result.error ?? "Error en sincronización");
         return;
       }
-      void fetchData();
+      void fetchDataRef.current?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {
@@ -378,6 +408,31 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
           <Table>
             <THead>
               <TR>
+                <TH className="w-8">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input cursor-pointer"
+                    checked={data?.orders.every((o) => checkedOrders.has(o.id)) ?? false}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      const allChecked = data?.orders.every((o) => checkedOrders.has(o.id)) ?? false;
+                      if (allChecked) {
+                        setCheckedOrders((prev) => {
+                          const next = new Set(prev);
+                          data?.orders.forEach((o) => next.delete(o.id));
+                          return next;
+                        });
+                      } else {
+                        setCheckedOrders((prev) => {
+                          const next = new Set(prev);
+                          data?.orders.forEach((o) => next.add(o.id));
+                          return next;
+                        });
+                      }
+                    }}
+                    title="Seleccionar todos en esta página"
+                  />
+                </TH>
                 <TH>
                   <SortHeader
                     col="date_created"
@@ -424,13 +479,13 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
             <TBody>
               {loading && !data ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={9} className="py-12 text-center text-muted-foreground">
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                   </td>
                 </tr>
               ) : data?.orders.length === 0 ? (
                 <EmptyRow
-                  colSpan={8}
+                  colSpan={9}
                   message="No hay órdenes en este rango con los filtros aplicados."
                 />
               ) : (
@@ -452,7 +507,35 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
                       })
                     : null;
                   return (
-                    <TR key={order.id} onClick={() => openDetail(order)}>
+                    <TR
+                      key={order.id}
+                      onClick={() => openDetail(order)}
+                      data-checked={checkedOrders.has(order.id)}
+                      className={cn(
+                        "cursor-pointer",
+                        checkedOrders.has(order.id) && "bg-primary/5 hover:bg-primary/10"
+                      )}
+                    >
+                      <TD className="w-8">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-input cursor-pointer"
+                          checked={checkedOrders.has(order.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setCheckedOrders((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(order.id)) {
+                                next.delete(order.id);
+                              } else {
+                                next.add(order.id);
+                              }
+                              return next;
+                            });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </TD>
                       <TD className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                         {formatDateTime(order.date_created)}
                       </TD>

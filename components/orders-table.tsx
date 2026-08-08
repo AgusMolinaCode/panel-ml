@@ -133,13 +133,11 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   });
   const latestOrderIdRef = React.useRef<number | null>(null);
   const syncingRef = React.useRef(false);
-  const fetchDataRef = React.useRef<(() => Promise<void>) | undefined>(undefined);
   const fetchGenRef = React.useRef(0);
   const searchRef = React.useRef(search);
   searchRef.current = search;
 
   const fetchData = React.useCallback(async (): Promise<void> => {
-    fetchDataRef.current = fetchData;
     const gen = ++fetchGenRef.current;
     const isInitial = data === null;
     if (isInitial) setLoading(true);
@@ -184,43 +182,62 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     } finally {
       if (gen === fetchGenRef.current && isInitial) setLoading(false);
     }
-  }, [fromMs, toMs, offset, sortBy, sortDir, statusFilter]);
+  }, [fromMs, toMs, offset, sortBy, sortDir, statusFilter, data]);
 
+  const handleSync = React.useCallback(async (): Promise<void> => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncing(true);
+    setError(null);
+    try {
+      const result = await syncOrdersAction(90);
+      if (!result.success) {
+        setError(result.error ?? "Error en sincronización");
+        return;
+      }
+      void fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error");
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
+    }
+  }, [fetchData]);
+
+  // Reset offset when range/filter/sort changes
   React.useEffect(() => {
     setOffset(0);
   }, [fromMs, toMs, statusFilter, search, sortBy, sortDir]);
 
-  // Sync + fetch on mount; subsequent calls only fetch (when fetchData deps change)
+  // Initial data load on mount + re-fetch when fetchData changes
   React.useEffect(() => {
     void handleSync();
-    // handleSync already calls fetchData internally when sync completes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleSync]);
 
-  // Auto-sync every 10 minutes while tab is open
+  // Auto-sync every 10 minutes
   React.useEffect(() => {
     const interval = setInterval(() => {
-      void handleSync();
+      if (!syncingRef.current) void handleSync();
     }, 10 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [handleSync]);
 
-  // Debounced search — typing won't spam fetches
+  // Re-sync on tab focus
+  React.useEffect(() => {
+    const onFocus = (): void => {
+      if (!syncingRef.current) void handleSync();
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    return () => document.removeEventListener("visibilitychange", onFocus);
+  }, [handleSync]);
+
+  // Debounced search
   React.useEffect(() => {
     const timer = setTimeout(() => {
       void fetchData();
     }, 300);
     return () => clearTimeout(timer);
   }, [search, fetchData]);
-
-  // Sync immediately when tab regains focus (but don't auto-poll)
-  React.useEffect(() => {
-    const onFocus = (): void => {
-      void fetchData();
-    };
-    document.addEventListener("visibilitychange", onFocus);
-    return () => document.removeEventListener("visibilitychange", onFocus);
-  }, [fetchData]);
 
   // Fast-refresh costs when gain is saved from the modal (no full re-fetch)
   React.useEffect(() => {
@@ -249,26 +266,6 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
       // ignore
     }
   }, [checkedOrders]);
-
-  async function handleSync(): Promise<void> {
-    if (syncingRef.current) return;
-    syncingRef.current = true;
-    setSyncing(true);
-    setError(null);
-    try {
-      const result = await syncOrdersAction(90);
-      if (!result.success) {
-        setError(result.error ?? "Error en sincronización");
-        return;
-      }
-      void fetchDataRef.current?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error");
-    } finally {
-      syncingRef.current = false;
-      setSyncing(false);
-    }
-  }
 
   function toggleSort(col: SortBy): void {
     if (sortBy === col) {

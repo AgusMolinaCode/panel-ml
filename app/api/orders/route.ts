@@ -53,6 +53,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // total is result.total — correct for normal queries.
+    // For text search, result.total reflects orders matching date/status (before in-memory filter),
+    // which is an upper bound; pagination still works and user can infer partial results.
+    const total = result.total;
+
     const costsMap: Record<number, object | null> = {};
     if (filteredOrders.length > 0) {
       const costs = await getOrderCostsBulk(filteredOrders.map((o) => o.id));
@@ -63,7 +68,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       orders: filteredOrders,
-      total: filteredOrders.length,
+      total,
       limit,
       offset,
       costs: costsMap,

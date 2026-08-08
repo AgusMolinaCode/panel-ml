@@ -182,7 +182,7 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     } finally {
       if (gen === fetchGenRef.current && isInitial) setLoading(false);
     }
-  }, [fromMs, toMs, offset, sortBy, sortDir, statusFilter, data]);
+  }, [fromMs, toMs, offset, sortBy, sortDir, statusFilter]);
 
   const handleSync = React.useCallback(async (): Promise<void> => {
     if (syncingRef.current) return;
@@ -207,12 +207,26 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   // Reset offset when range/filter/sort changes
   React.useEffect(() => {
     setOffset(0);
-  }, [fromMs, toMs, statusFilter, search, sortBy, sortDir]);
+  }, [fromMs, toMs, statusFilter, sortBy, sortDir]);
 
-  // Initial data load on mount + re-fetch when fetchData changes
+  // Initial data load on mount: fetch only (no sync)
   React.useEffect(() => {
-    void handleSync();
-  }, [handleSync]);
+    void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-fetch on pagination (offset changes)
+  React.useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
+
+  // Debounced search
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchData();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, fetchData]);
 
   // Auto-sync every 10 minutes
   React.useEffect(() => {
@@ -230,14 +244,6 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     document.addEventListener("visibilitychange", onFocus);
     return () => document.removeEventListener("visibilitychange", onFocus);
   }, [handleSync]);
-
-  // Debounced search
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchData();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search, fetchData]);
 
   // Fast-refresh costs when gain is saved from the modal (no full re-fetch)
   React.useEffect(() => {

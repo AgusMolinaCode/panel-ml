@@ -142,36 +142,46 @@ export async function updateOrderClaimStatus(orderId: number, claimStatus: 'open
 
 // ---------- Sync log ----------
 
-export async function logSyncStart(jobName: string): Promise<number> {
-  const supabase = getSupabase()
-  const { data } = await supabase
-    .from('sync_log')
-    .insert({
-      job_name: jobName,
-      started_at: Date.now(),
-      status: 'running'
-    })
-    .select('id')
-    .single()
-  return data!.id
+export async function logSyncStart(jobName: string): Promise<number | null> {
+  try {
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('sync_log')
+      .insert({
+        job_name: jobName,
+        started_at: Date.now(),
+        status: 'running'
+      })
+      .select('id')
+      .single()
+    return data?.id ?? null
+  } catch {
+    // If logging fails (RLS, permissions, etc.), return null and continue
+    return null
+  }
 }
 
 export async function logSyncFinish(
-  id: number,
+  id: number | null,
   status: 'success' | 'error' | 'partial',
   recordsProcessed = 0,
   errorMessage: string | null = null
 ): Promise<void> {
-  const supabase = getSupabase()
-  await supabase
-    .from('sync_log')
-    .update({
-      finished_at: Date.now(),
-      status,
-      records_processed: recordsProcessed,
-      error_message: errorMessage
-    })
-    .eq('id', id)
+  if (id === null) return
+  try {
+    const supabase = getSupabase()
+    await supabase
+      .from('sync_log')
+      .update({
+        finished_at: Date.now(),
+        status,
+        records_processed: recordsProcessed,
+        error_message: errorMessage
+      })
+      .eq('id', id)
+  } catch {
+    // Best-effort logging
+  }
 }
 
 export async function getRecentSyncLogs(limit = 20): Promise<SyncLogEntry[]> {

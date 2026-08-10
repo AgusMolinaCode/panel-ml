@@ -14,13 +14,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const limitParam = url.searchParams.get("limit");
   const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
 
-  const logId = await logSyncStart("api.orders.sync");
+  let logId: number | null = null;
+  try {
+    logId = await logSyncStart("api.orders.sync");
+  } catch {
+    // Logging is best-effort
+  }
+
   try {
     const processed = await syncRecentOrders(limit);
-    await logSyncFinish(logId, "success", processed);
+    if (logId !== null) await logSyncFinish(logId, "success", processed).catch(() => {});
     return NextResponse.json({ success: true, processed });
   } catch (err) {
-    const status = "error";
     const message =
       err instanceof NotAuthenticatedError
         ? err.message
@@ -29,7 +34,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         : err instanceof Error
         ? err.message
         : "Unknown error during sync";
-    await logSyncFinish(logId, status, 0, message);
+    console.error("[orders/sync] error:", err);
+    if (logId !== null) await logSyncFinish(logId, "error", 0, message).catch(() => {});
 
     const httpStatus = err instanceof NotAuthenticatedError ? 401 : 500;
     return NextResponse.json({ error: message }, { status: httpStatus });

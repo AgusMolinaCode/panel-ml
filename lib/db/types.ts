@@ -140,6 +140,16 @@ export interface OrderCost {
   updated_at: number;
 }
 
+export interface RepairOrder {
+  id: string;
+  month: string;
+  date: number; // unix timestamp ms
+  description: string;
+  amount: number; // positive = income
+  created_at?: number;
+  updated_at?: number;
+}
+
 export interface MonthlyExpense {
   id: string;
   month: string;

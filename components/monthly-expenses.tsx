@@ -6,6 +6,7 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { RepairsLog } from "./repairs-log";
 
 interface Expense {
   id: string;
@@ -84,6 +85,7 @@ export function MonthlyExpenses() {
 
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [monthlyGain, setMonthlyGain] = React.useState<number | null>(null);
+  const [repairIncome, setRepairIncome] = React.useState<number>(0);
   const [loading, setLoading] = React.useState(true);
 
   const fetchExpenses = React.useCallback(async () => {
@@ -183,7 +185,7 @@ export function MonthlyExpenses() {
   }, [fromMs, toMs, monthKey]);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.monto, 0);
-  const pocketMoney = (monthlyGain ?? 0) - totalExpenses;
+  const pocketMoney = (monthlyGain ?? 0) + repairIncome - totalExpenses;
 
   async function saveExpense(expense: Expense): Promise<void> {
     try {
@@ -240,6 +242,7 @@ export function MonthlyExpenses() {
   }
 
   return (
+    <>
     <Card className="mt-4">
       <div className="border-b border-border/60 px-4 py-3">
         <div className="flex items-center justify-between gap-2">
@@ -329,6 +332,14 @@ export function MonthlyExpenses() {
             {monthlyGain != null ? formatMoney(monthlyGain, "ARS") : "—"}
           </span>
         </div>
+        {repairIncome > 0 && (
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Reparaciones</span>
+            <span className="tabular-nums font-medium text-success">
+              + {formatMoney(repairIncome, "ARS")}
+            </span>
+          </div>
+        )}
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground">Total gastos</span>
           <span className="tabular-nums font-medium text-destructive">
@@ -348,6 +359,13 @@ export function MonthlyExpenses() {
         </div>
       </div>
     </Card>
+
+    <RepairsLog
+      monthKey={monthKey}
+      onMonthChange={setMonthKey}
+      onIncomeChange={setRepairIncome}
+    />
+    </>
   );
 }
 

@@ -289,6 +289,30 @@ export async function deleteMonthlyExpense(id: string): Promise<void> {
   await supabase.from('monthly_expenses').delete().eq('id', id)
 }
 
+// ---------- Repair Orders ----------
+
+export async function getMonthlyRepairs(month: string): Promise<import('./types').RepairOrder[]> {
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('repairs')
+    .select('*')
+    .eq('month', month)
+    .order('date', { ascending: false })
+  return (data as import('./types').RepairOrder[]) || []
+}
+
+export async function upsertRepair(repair: import('./types').RepairOrder): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('repairs').upsert(repair, {
+    onConflict: 'id'
+  })
+}
+
+export async function deleteRepair(id: string): Promise<void> {
+  const supabase = getSupabase()
+  await supabase.from('repairs').delete().eq('id', id)
+}
+
 // ---------- Shipments ----------
 
 interface RawShipmentRow {

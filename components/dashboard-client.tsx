@@ -71,7 +71,7 @@ export function DashboardClient({
 
   // Centralized sync + broadcast function
   const globalRefresh = React.useCallback(async () => {
-    await syncOrdersAction(90);
+    await syncOrdersAction(1); // 1 day is enough to catch recent orders; full 90d sync is too slow
     window.dispatchEvent(new Event(REFRESH_EVENT));
   }, []);
 

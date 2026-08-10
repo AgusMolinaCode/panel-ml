@@ -23,7 +23,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const processed = await syncRecentOrders(days, 50, syncShipments);
+    // Abort after 25s — Vercel timeout is 30s, we give ourselves a buffer
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 25_000);
+
+    const processed = await Promise.race([
+      syncRecentOrders(days, 50, syncShipments),
+      new Promise<never>((_, reject) =>
+        req.signal.addEventListener("abort", () => reject(new Error("Request aborted")))
+      ),
+    ]).finally(() => clearTimeout(timeout));
+
     if (logId !== null) await logSyncFinish(logId, "success", processed).catch(() => {});
     return NextResponse.json({ success: true, processed });
   } catch (err) {
@@ -38,6 +48,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error("[orders/sync] error:", err);
     if (logId !== null) await logSyncFinish(logId, "error", 0, message).catch(() => {});
 
+    if (err instanceof Error && err.message === "Request aborted") {
+      return NextResponse.json({ error: "Request timeout" }, { status: 408 });
+    }
     const httpStatus = err instanceof NotAuthenticatedError ? 401 : 500;
     return NextResponse.json({ error: message }, { status: httpStatus });
   }

@@ -3,9 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { syncRecentOrders } from "@/lib/ml/orders";
 
-export async function syncOrdersAction(days = 90): Promise<{ success: boolean; processed: number; error?: string }> {
+/**
+ * Fast sync: fetches order details only (no shipment/claim sync).
+ * Shipments are synced separately by /api/sync every 5 min.
+ */
+export async function syncOrdersAction(days = 1): Promise<{ success: boolean; processed: number; error?: string }> {
   try {
-    const processed = await syncRecentOrders(days);
+    const processed = await syncRecentOrders(days, 50, false);
     revalidatePath("/dashboard");
     return { success: true, processed };
   } catch (err) {

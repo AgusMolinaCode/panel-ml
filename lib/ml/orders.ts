@@ -136,7 +136,7 @@ function mapOrder(detail: MlOrderDetail): Omit<Order, "synced_at"> {
  * Always re-fetches all orders in the lookback window to catch status changes
  * (cancellations, confirmations, etc.). Returns the number of orders processed.
  */
-export async function syncRecentOrders(days = 30, pageLimit = 50): Promise<number> {
+export async function syncRecentOrders(days = 30, pageLimit = 50, syncShipments = false): Promise<number> {
   const creds = await getCredentials();
   if (!creds) throw new NotAuthenticatedError();
 
@@ -163,21 +163,20 @@ export async function syncRecentOrders(days = 30, pageLimit = 50): Promise<numbe
 
     if (list.results.length === 0) break;
 
-    let pageProcessed = 0;
     for (const ref of list.results) {
       try {
         const detail = await mlGet<MlOrderDetail>(`/orders/${ref.id}`);
         await upsertOrder(mapOrder(detail));
-        pageProcessed += 1;
         processed += 1;
 
-        const claimStatus = await getOrderClaimStatus(ref.id);
-        if (claimStatus !== null) {
-          await updateOrderClaimStatus(ref.id, claimStatus);
-        }
-
-        if (detail.tags?.includes("paid") || detail.status === "paid") {
-          await syncShipmentsForOrder(ref.id);
+        if (syncShipments) {
+          const claimStatus = await getOrderClaimStatus(ref.id);
+          if (claimStatus !== null) {
+            await updateOrderClaimStatus(ref.id, claimStatus);
+          }
+          if (detail.tags?.includes("paid") || detail.status === "paid") {
+            await syncShipmentsForOrder(ref.id);
+          }
         }
       } catch (err) {
         console.error(`[sync-orders] failed to fetch order ${ref.id}:`, err);

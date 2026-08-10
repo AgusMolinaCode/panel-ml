@@ -5,14 +5,15 @@ import { MercadoLibreApiError } from "@/lib/ml/client";
 import { logSyncFinish, logSyncStart } from "@/lib/db";
 
 /**
- * POST /api/orders/sync?limit=50
+ * POST /api/orders/sync?days=1&syncShipments=false
  * Triggers an immediate sync of recent orders from MercadoLibre.
  * Returns the number of orders processed.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
-  const limitParam = url.searchParams.get("limit");
-  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 50, 200) : 50;
+  const daysParam = url.searchParams.get("days");
+  const days = daysParam ? Math.min(parseInt(daysParam, 10) || 1, 90) : 1;
+  const syncShipments = url.searchParams.get("syncShipments") === "true";
 
   let logId: number | null = null;
   try {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const processed = await syncRecentOrders(limit);
+    const processed = await syncRecentOrders(days, 50, syncShipments);
     if (logId !== null) await logSyncFinish(logId, "success", processed).catch(() => {});
     return NextResponse.json({ success: true, processed });
   } catch (err) {

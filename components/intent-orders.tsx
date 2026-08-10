@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ShoppingCart, Loader2, ArrowRight } from "lucide-react";
+import { REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 import { Card, CardBody, CardHeader } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -44,8 +45,15 @@ export function IntentOrders({ initialOrders, initialTotal, initialCurrency }: P
 
   React.useEffect(() => {
     void fetchData();
-    const t = setInterval(fetchData, 5 * 60_000);
-    return () => clearInterval(t);
+  }, [fetchData]);
+
+  // Listen for global refresh event from DashboardClient
+  React.useEffect(() => {
+    const handler = (): void => {
+      void fetchData();
+    };
+    window.addEventListener(REFRESH_EVENT, handler);
+    return () => window.removeEventListener(REFRESH_EVENT, handler);
   }, [fetchData]);
 
   return (

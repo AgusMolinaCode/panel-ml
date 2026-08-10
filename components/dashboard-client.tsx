@@ -4,6 +4,8 @@ import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { startOfDay, endOfDay, subDays, startOfMonth, subMonths } from "date-fns";
 import { OrdersStats } from "./orders-stats";
+import { syncOrdersAction } from "@/app/actions/sync-orders";
+import { RefreshContext, REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 import type { OrderStats, ShipmentWithOrder } from "@/lib/db/queries";
 
 type RangeMode = "day" | "week" | "month" | "2months" | "3months";
@@ -67,11 +69,64 @@ export function DashboardClient({
     void fetchStats();
   }, [fetchStats]);
 
-  return (
-    <div className="space-y-6">
-      <OrdersStats stats={stats} loading={loading} rangeMode={activeMode} />
+  // Centralized sync + broadcast function
+  const globalRefresh = React.useCallback(async () => {
+    await syncOrdersAction(90);
+    window.dispatchEvent(new Event(REFRESH_EVENT));
+  }, []);
 
-      {children}
-    </div>
+  // Fallback polling every 2 minutes (backup when SSE is disconnected)
+  React.useEffect(() => {
+    const interval = setInterval(() => void globalRefresh(), 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [globalRefresh]);
+
+  // Real-time: SSE connection to /api/events
+  React.useEffect(() => {
+    let retryDelay = 1000;
+    let disposed = false;
+
+    function connect(): void {
+      if (disposed) return;
+
+      const es = new EventSource("/api/events");
+
+      es.addEventListener("order:updated", () => {
+        if (!disposed) window.dispatchEvent(new Event(REFRESH_EVENT));
+      });
+
+      es.addEventListener("shipment:updated", () => {
+        if (!disposed) window.dispatchEvent(new Event(REFRESH_EVENT));
+      });
+
+      es.addEventListener("connected", () => {
+        console.log("[SSE] Connected — real-time updates active");
+        retryDelay = 1000; // Reset backoff on successful connection
+      });
+
+      es.onerror = () => {
+        if (disposed) return;
+        es.close();
+        console.warn(`[SSE] Disconnected — retrying in ${retryDelay}ms`);
+        setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 30_000); // Exponential backoff, max 30s
+      };
+    }
+
+    connect();
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  return (
+    <RefreshContext.Provider value={{ triggerGlobalRefresh: globalRefresh }}>
+      <div className="space-y-6">
+        <OrdersStats stats={stats} loading={loading} rangeMode={activeMode} />
+
+        {children}
+      </div>
+    </RefreshContext.Provider>
   );
 }

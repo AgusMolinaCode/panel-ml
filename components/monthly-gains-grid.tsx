@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { startOfDay, endOfDay, subDays, startOfMonth, subMonths } from "date-fns";
 import { Card } from "./ui/card";
 import { TrendingUp, TrendingDown } from "lucide-react";
+import { REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 import { formatMoney } from "@/lib/format";
 import { gainForOrder } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
@@ -150,7 +151,11 @@ export function MonthlyGainsGrid() {
   React.useEffect(() => {
     const handler = () => setRefreshKey((k) => k + 1);
     window.addEventListener("panel-ml:gains-changed", handler);
-    return () => window.removeEventListener("panel-ml:gains-changed", handler);
+    window.addEventListener(REFRESH_EVENT, handler);
+    return () => {
+      window.removeEventListener("panel-ml:gains-changed", handler);
+      window.removeEventListener(REFRESH_EVENT, handler);
+    };
   }, []);
 
   React.useEffect(() => {

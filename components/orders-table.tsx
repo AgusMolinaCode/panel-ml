@@ -245,6 +245,15 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     return () => document.removeEventListener("visibilitychange", onFocus);
   }, [handleSync]);
 
+  // Listen for global refresh event from DashboardClient
+  React.useEffect(() => {
+    const handler = (): void => {
+      if (!syncingRef.current) void handleSync();
+    };
+    window.addEventListener("panel-ml:global-refresh", handler);
+    return () => window.removeEventListener("panel-ml:global-refresh", handler);
+  }, [handleSync]);
+
   // Fast-refresh costs when gain is saved from the modal (no full re-fetch)
   React.useEffect(() => {
     const handler = (e: Event): void => {

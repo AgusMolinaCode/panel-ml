@@ -385,6 +385,14 @@ export async function getShipmentsBulk(orderIds: number[]): Promise<Map<number, 
   return result
 }
 
+export async function updateShipmentStatus(id: number, status: string, trackingNumber: string | null): Promise<void> {
+  const supabase = getSupabase()
+  await supabase
+    .from('shipments')
+    .update({ status, tracking_number: trackingNumber, synced_at: Date.now() })
+    .eq('id', id)
+}
+
 // ---------- Visits ----------
 
 export async function upsertItemVisit(itemId: string, date: string, total: number): Promise<void> {

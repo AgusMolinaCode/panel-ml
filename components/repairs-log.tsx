@@ -84,6 +84,9 @@ export function RepairsLog({ monthKey, onMonthChange, onIncomeChange }: Props) {
     onIncomeChange?.(total);
   }, [repairs, onIncomeChange]);
 
+  // Debounce save to avoid race conditions on rapid keystrokes
+  const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   async function saveRepair(repair: RepairOrder): Promise<void> {
     try {
       const res = await fetch("/api/repairs", {
@@ -92,11 +95,16 @@ export function RepairsLog({ monthKey, onMonthChange, onIncomeChange }: Props) {
         body: JSON.stringify({ ...repair, month: monthKey }),
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
-      const loaded = await fetchRepairs();
-      setRepairs(loaded);
     } catch (err) {
       console.error("Failed to save repair:", err);
     }
+  }
+
+  function debouncedSave(repair: RepairOrder): void {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      void saveRepair(repair);
+    }, 300);
   }
 
   function addRepair(): void {
@@ -117,7 +125,7 @@ export function RepairsLog({ monthKey, onMonthChange, onIncomeChange }: Props) {
     );
     setRepairs(updated);
     const repair = updated.find((r) => r.id === id);
-    if (repair) void saveRepair(repair);
+    if (repair) debouncedSave(repair);
   }
 
   function deleteRepairById(id: string): void {

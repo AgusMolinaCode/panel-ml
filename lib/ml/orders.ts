@@ -163,23 +163,37 @@ export async function syncRecentOrders(days = 30, pageLimit = 50, syncShipments 
 
     if (list.results.length === 0) break;
 
-    for (const ref of list.results) {
-      try {
-        const detail = await mlGet<MlOrderDetail>(`/orders/${ref.id}`);
-        await upsertOrder(mapOrder(detail));
-        processed += 1;
+    // Fetch order details in parallel (batch of 10) for speed
+    const BATCH = 10;
+    for (let i = 0; i < list.results.length; i += BATCH) {
+      const batch = list.results.slice(i, i + BATCH);
+      const details = await Promise.allSettled(
+        batch.map((ref) => mlGet<MlOrderDetail>(`/orders/${ref.id}`))
+      );
 
-        if (syncShipments) {
-          const claimStatus = await getOrderClaimStatus(ref.id);
-          if (claimStatus !== null) {
-            await updateOrderClaimStatus(ref.id, claimStatus);
-          }
-          if (detail.tags?.includes("paid") || detail.status === "paid") {
-            await syncShipmentsForOrder(ref.id);
-          }
+      for (let j = 0; j < details.length; j++) {
+        const result = details[j];
+        if (result.status === "rejected") {
+          console.error(`[sync-orders] failed to fetch order ${batch[j].id}:`, result.reason);
+          continue;
         }
-      } catch (err) {
-        console.error(`[sync-orders] failed to fetch order ${ref.id}:`, err);
+        try {
+          const detail = result.value;
+          await upsertOrder(mapOrder(detail));
+          processed += 1;
+
+          if (syncShipments) {
+            const claimStatus = await getOrderClaimStatus(batch[j].id);
+            if (claimStatus !== null) {
+              await updateOrderClaimStatus(batch[j].id, claimStatus);
+            }
+            if (detail.tags?.includes("paid") || detail.status === "paid") {
+              await syncShipmentsForOrder(batch[j].id);
+            }
+          }
+        } catch (err) {
+          console.error(`[sync-orders] failed to upsert order ${batch[j].id}:`, err);
+        }
       }
     }
 

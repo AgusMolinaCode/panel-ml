@@ -1,4 +1,4 @@
-import { getCredentials, upsertOrder, getLatestOrderDate, updateOrderClaimStatus } from "../db";
+import { getCredentials, upsertOrder, getLatestOrderDate, updateOrderClaimStatus, clearOrderGain } from "../db";
 import type { Order, OrderItem, OrderPayment, OrderShipping } from "../db/types";
 import { mlGet } from "./client";
 import { NotAuthenticatedError } from "./auth";
@@ -181,6 +181,12 @@ export async function syncRecentOrders(days = 30, pageLimit = 50, syncShipments 
           const detail = result.value;
           await upsertOrder(mapOrder(detail));
           processed += 1;
+
+          // Clear gain if order status is no longer revenue-generating
+          const REVENUE_STATUSES = new Set(['paid', 'confirmed', 'partially_paid']);
+          if (!REVENUE_STATUSES.has(detail.status)) {
+            await clearOrderGain(batch[j].id);
+          }
 
           if (syncShipments) {
             const claimStatus = await getOrderClaimStatus(batch[j].id);

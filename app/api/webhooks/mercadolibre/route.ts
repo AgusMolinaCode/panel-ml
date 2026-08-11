@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { config } from "@/lib/config";
 import { mlGet } from "@/lib/ml/client";
-import { upsertOrder, updateOrderClaimStatus, updateShipmentStatus } from "@/lib/db";
+import { upsertOrder, updateOrderClaimStatus, updateShipmentStatus, clearOrderGain } from "@/lib/db";
 import { getOrderClaimStatus } from "@/lib/ml/claims";
 import { syncShipmentsForOrder } from "@/lib/ml/shipments";
 import { broadcast } from "@/lib/sse/emitter";
@@ -180,9 +180,17 @@ async function syncOrder(orderId: number): Promise<void> {
   const detail = await mlGet<MlOrderDetail>(`/orders/${orderId}`);
   await upsertOrder(mapOrder(detail));
 
+  // Clear gain if order status is no longer revenue-generating
+  const REVENUE_STATUSES = new Set(['paid', 'confirmed', 'partially_paid']);
+  if (!REVENUE_STATUSES.has(detail.status)) {
+    await clearOrderGain(orderId);
+  }
+
   const claimStatus = await getOrderClaimStatus(orderId);
   if (claimStatus !== null) {
     await updateOrderClaimStatus(orderId, claimStatus);
+    // Claim found: clear any stored gain since the order is disputed
+    await clearOrderGain(orderId);
   }
 
   if (detail.tags?.includes("paid") || detail.status === "paid") {

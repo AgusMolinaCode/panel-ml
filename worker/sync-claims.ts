@@ -5,7 +5,7 @@
 
 import { getSupabase } from "../lib/supabase";
 import { getOrderClaimStatus } from "../lib/ml/claims";
-import { updateOrderClaimStatus } from "../lib/db";
+import { updateOrderClaimStatus, clearOrderGain } from "../lib/db";
 
 const LOOKBACK_DAYS = 90;
 
@@ -30,6 +30,8 @@ export async function runSyncClaims(): Promise<void> {
       const claimStatus = await getOrderClaimStatus(id);
       if (claimStatus !== null) {
         await updateOrderClaimStatus(id, claimStatus);
+        // Claim found: clear any stored gain since the order is disputed
+        await clearOrderGain(id);
         updated++;
       }
     } catch (err) {

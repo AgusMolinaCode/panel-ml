@@ -6,11 +6,6 @@
     "auditLog": "C:\\Users\\urano\\OneDrive\\Escritorio\\panel-ml\\logs\\.e4eb41431ad2b38990b7cc20e2ce78e02df7674f-audit.json",
     "files": [
         {
-            "date": 1785160390889,
-            "name": "C:\\Users\\urano\\OneDrive\\Escritorio\\panel-ml\\logs\\mcp-puppeteer-2026-07-27.log",
-            "hash": "a2e0d7397669383079995b3ab8d9e9464b7aec964e2c2b1a6fbca0609cb23e08"
-        },
-        {
             "date": 1785799812832,
             "name": "C:\\Users\\urano\\OneDrive\\Escritorio\\panel-ml\\logs\\mcp-puppeteer-2026-08-03.log",
             "hash": "20e4547ad164b489e6c6ec609a6eb69a16a98359807ccc9de9c57efc47d93289"
@@ -39,6 +34,11 @@
             "date": 1786362296955,
             "name": "C:\\Users\\urano\\OneDrive\\Escritorio\\panel-ml\\logs\\mcp-puppeteer-2026-08-10.log",
             "hash": "87a77773c5518aa44d30b3e1fd46e9fed14cc768e4ee0c97a203bf19bdee4e74"
+        },
+        {
+            "date": 1786489187312,
+            "name": "C:\\Users\\urano\\OneDrive\\Escritorio\\panel-ml\\logs\\mcp-puppeteer-2026-08-11.log",
+            "hash": "85bc2810f58a93d5be290a969fe3015b5a6991693c1bcf5ec3976f5d4656362e"
         }
     ],
     "hashType": "sha256"

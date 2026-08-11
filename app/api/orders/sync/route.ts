@@ -3,6 +3,7 @@ import { syncRecentOrders } from "@/lib/ml/orders";
 import { NotAuthenticatedError } from "@/lib/ml/auth";
 import { MercadoLibreApiError } from "@/lib/ml/client";
 import { logSyncFinish, logSyncStart } from "@/lib/db";
+import { broadcast } from "@/lib/sse/emitter";
 
 /**
  * POST /api/orders/sync?days=1&syncShipments=false
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ]).finally(() => clearTimeout(timeout));
 
     if (logId !== null) await logSyncFinish(logId, "success", processed).catch(() => {});
+
+    // Broadcast so all connected frontends refresh immediately
+    broadcast("order:updated", { source: "sync-api" });
+
     return NextResponse.json({ success: true, processed });
   } catch (err) {
     const message =

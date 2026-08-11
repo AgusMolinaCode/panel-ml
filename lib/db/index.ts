@@ -265,6 +265,17 @@ export async function deleteOrderCost(orderId: number): Promise<void> {
   await supabase.from('order_costs').delete().eq('order_id', orderId)
 }
 
+/** Clear the stored gain for an order (set gain=null) without deleting the cost record.
+ *  Called when a claim is opened/closed or when order status becomes non-revenue. */
+export async function clearOrderGain(orderId: number): Promise<void> {
+  const supabase = getSupabase()
+  await supabase
+    .from('order_costs')
+    .update({ gain: null, updated_at: Date.now() })
+    .eq('order_id', orderId)
+    .not('gain', 'is', null) // only update if there's actually a gain to clear
+}
+
 // ---------- Monthly Expenses ----------
 
 export async function getMonthlyExpenses(month: string): Promise<import('./types').MonthlyExpense[]> {

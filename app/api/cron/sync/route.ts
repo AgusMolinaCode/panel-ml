@@ -6,20 +6,29 @@ import { logSyncFinish, logSyncStart, clearGainsForOrdersWithClaims } from "@/li
 import { broadcast } from "@/lib/sse/emitter";
 
 /**
- * GET /api/cron/sync
+ * POST /api/cron/sync
  *
- * Vercel Cron Job — runs every 10 minutes.
- * Handles: token refresh, orders sync, claims sync.
+ * External cron service endpoint (e.g. cron-job.org)
+ * Runs every 10 minutes.
+ * Handles: token refresh, orders sync, claims sync, clear gains on claims.
  *
- * Configure in vercel.json:
- * {
- *   "crons": [{ "path": "/api/cron/sync", "schedule": "*/10 * * * *" }]
- * }
+ * Setup in cron-job.org:
+ *   URL: https://your-domain.vercel.app/api/cron/sync
+ *   Method: POST
+ *   Schedule: every 10 minutes
  *
- * To secure, add VERCEL_CRON_SECRET env var and check it:
- *   if (req.headers.get("x-cron-secret") !== process.env.VERCEL_CRON_SECRET) ...
+ * Security: set VERCEL_CRON_SECRET env var and the secret will be validated.
  */
-export async function GET(): Promise<NextResponse> {
+export async function POST(req: Request): Promise<NextResponse> {
+  // Optional security: validate secret if VERCEL_CRON_SECRET is set
+  const secret = process.env.VERCEL_CRON_SECRET;
+  if (secret) {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const results: string[] = [];
   const errors: string[] = [];
 

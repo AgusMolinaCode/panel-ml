@@ -24,10 +24,15 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname === "/login";
+  const pathname = request.nextUrl.pathname;
+  const isLoginPage = pathname === "/login";
+  const isPublicApiRoute =
+    pathname === "/api/cron/sync" ||
+    pathname.startsWith("/api/webhooks/") ||
+    pathname.startsWith("/api/auth/");
   const isProtectedRoute =
-    request.nextUrl.pathname.startsWith("/dashboard") ||
-    request.nextUrl.pathname.startsWith("/api");
+    pathname.startsWith("/dashboard") ||
+    (pathname.startsWith("/api") && !isPublicApiRoute);
 
   // If not logged in and trying to access protected route, redirect to login
   if (!user && isProtectedRoute) {

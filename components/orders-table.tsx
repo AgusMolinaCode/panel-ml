@@ -105,6 +105,7 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   const [data, setData] = React.useState<OrdersResult | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [openClaims, setOpenClaims] = React.useState<Order[]>([]);
   const [offset, setOffset] = React.useState(0);
   const [sortBy, setSortBy] = React.useState<SortBy>("date_created");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
@@ -136,6 +137,24 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   const fetchGenRef = React.useRef(0);
   const searchRef = React.useRef(search);
   searchRef.current = search;
+
+  const fetchOpenClaims = React.useCallback(async (): Promise<void> => {
+    try {
+      const params = new URLSearchParams({
+        claim_status: "opened",
+        from: "0",
+        to: String(Date.now()),
+        limit: "500",
+        offset: "0",
+      });
+      const res = await fetch(`/api/orders?${params.toString()}`);
+      const json = (await res.json()) as OrdersResult & { error?: string };
+      if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`);
+      setOpenClaims(json.orders);
+    } catch (err) {
+      console.error("Failed to load open claims:", err);
+    }
+  }, []);
 
   const fetchData = React.useCallback(async (): Promise<void> => {
     const gen = ++fetchGenRef.current;
@@ -209,9 +228,10 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     setOffset(0);
   }, [fromMs, toMs, statusFilter, sortBy, sortDir]);
 
-  // Initial data load on mount: fetch only (no sync)
+  // Initial data load on mount: fetch orders and all open claims (ignore date range)
   React.useEffect(() => {
     void fetchData();
+    void fetchOpenClaims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -219,6 +239,15 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   React.useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  // Refresh open claims whenever the global refresh fires (after sync, SSE, etc.)
+  React.useEffect(() => {
+    const handler = (): void => {
+      void fetchOpenClaims();
+    };
+    window.addEventListener("panel-ml:global-refresh", handler);
+    return () => window.removeEventListener("panel-ml:global-refresh", handler);
+  }, [fetchOpenClaims]);
 
   // Debounced search
   React.useEffect(() => {
@@ -332,20 +361,18 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const ordersWithOpenClaims = data?.orders.filter((o) => o.claim_status === "opened") ?? [];
-
   return (
     <>
-      {ordersWithOpenClaims.length > 0 && (
+      {openClaims.length > 0 && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 mb-4 animate-fade-in-up">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
             <span className="font-semibold text-destructive">
-              {ordersWithOpenClaims.length} orden{ordersWithOpenClaims.length === 1 ? "" : "es"} con reclamo abierto
+              {openClaims.length} orden{openClaims.length === 1 ? "" : "es"} con reclamo abierto
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {ordersWithOpenClaims.map((order) => (
+            {openClaims.map((order) => (
               <a
                 key={order.id}
                 href={`https://www.mercadolibre.com.ar/ventas/omni/listado?filters=&startPeriod=&subFilters=&search=${order.id}`}

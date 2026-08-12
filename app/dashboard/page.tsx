@@ -11,6 +11,7 @@ import { MonthlyIvaSummary } from "@/components/monthly-iva-summary";
 import { MonthlyExpenses } from "@/components/monthly-expenses";
 import { PriceCalculator } from "@/components/price-calculator";
 import { BarChart3, ShoppingCart, Wallet, LogOut } from "lucide-react";
+import { OpenClaimsBanner } from "@/components/open-claims-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,9 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
           initialShipments={initialShipments}
         />
       </Suspense>
+
+      {/* Open claims banner — always shows all open claims from last 3 months */}
+      <OpenClaimsBanner />
 
       {/* Orders table */}
       <div className="mt-6 animate-fade-in-up">

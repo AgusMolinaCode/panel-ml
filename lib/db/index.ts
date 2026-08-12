@@ -276,6 +276,31 @@ export async function clearOrderGain(orderId: number): Promise<void> {
     .not('gain', 'is', null) // only update if there's actually a gain to clear
 }
 
+/** Clear gains for all orders that have an open or closed claim.
+ *  Returns the number of orders cleared. */
+export async function clearGainsForOrdersWithClaims(): Promise<number> {
+  const supabase = getSupabase()
+
+  // Get orders with claims that also have a stored gain
+  const { data } = await supabase
+    .from('orders')
+    .select('id')
+    .not('claim_status', 'is', null)
+
+  if (!data || data.length === 0) return 0
+
+  const claimOrderIds = data.map((o) => o.id)
+
+  const { data: updated } = await supabase
+    .from('order_costs')
+    .update({ gain: null, updated_at: Date.now() })
+    .in('order_id', claimOrderIds)
+    .not('gain', 'is', null)
+    .select('order_id')
+
+  return updated?.length ?? 0
+}
+
 // ---------- Monthly Expenses ----------
 
 export async function getMonthlyExpenses(month: string): Promise<import('./types').MonthlyExpense[]> {

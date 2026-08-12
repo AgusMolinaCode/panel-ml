@@ -236,6 +236,7 @@ export interface OrdersQueryOptions {
   fromMs?: number
   toMs?: number
   statuses?: string[]
+  claimStatus?: 'opened' | 'closed' | null
   search?: string // matches order id (numeric) or buyer nickname
   limit?: number
   offset?: number
@@ -265,6 +266,9 @@ export async function queryOrders(opts: OrdersQueryOptions = {}): Promise<Orders
   }
   if (opts.statuses && opts.statuses.length > 0) {
     query = query.in('status', opts.statuses)
+  }
+  if (opts.claimStatus !== undefined) {
+    query = query.eq('claim_status', opts.claimStatus)
   }
   if (opts.search) {
     const s = opts.search.trim()

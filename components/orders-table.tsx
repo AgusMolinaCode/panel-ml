@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUpDown, ArrowUp, ArrowDown, Download, Loader2, RefreshCw, FileSpreadsheet, FileText, Copy, ExternalLink, Check } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Download, Loader2, RefreshCw, FileSpreadsheet, FileText, Copy, ExternalLink, Check, AlertTriangle } from "lucide-react";
 import { startOfDay, endOfDay, subDays, startOfMonth, subMonths } from "date-fns";
 import { Button } from "./ui/button";
 import { Card, CardBody, CardHeader } from "./ui/card";
@@ -332,8 +332,34 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const ordersWithOpenClaims = data?.orders.filter((o) => o.claim_status === "opened") ?? [];
+
   return (
     <>
+      {ordersWithOpenClaims.length > 0 && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 mb-4 animate-fade-in-up">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
+            <span className="font-semibold text-destructive">
+              {ordersWithOpenClaims.length} orden{ordersWithOpenClaims.length === 1 ? "" : "es"} con reclamo abierto
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ordersWithOpenClaims.map((order) => (
+              <a
+                key={order.id}
+                href={`https://www.mercadolibre.com.ar/ventas/omni/listado?filters=&startPeriod=&subFilters=&search=${order.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
+              >
+                #{order.id}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
       <Card>
         <CardHeader
           title="Órdenes"

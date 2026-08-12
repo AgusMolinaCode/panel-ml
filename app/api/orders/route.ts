@@ -30,6 +30,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (!Number.isNaN(from) && from > 0) opts.fromMs = from;
     if (!Number.isNaN(to) && to > 0) opts.toMs = to;
     if (statusParam) opts.statuses = statusParam.split(",").map((s) => s.trim()).filter(Boolean);
+    const claimStatusParam = url.searchParams.get("claim_status");
+    if (claimStatusParam === "opened" || claimStatusParam === "closed") {
+      opts.claimStatus = claimStatusParam;
+    }
     if (search && isNumericSearch) opts.search = search;
 
     if (url.searchParams.get("latest") === "true") {

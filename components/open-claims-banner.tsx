@@ -9,7 +9,7 @@ interface ClaimOrder {
   total_amount: number;
   currency_id: string;
   date_created: number;
-  items_json: string;
+  items: Array<{ title: string }>;
 }
 
 export function OpenClaimsBanner(): React.ReactElement {
@@ -50,8 +50,7 @@ export function OpenClaimsBanner(): React.ReactElement {
       </div>
       <div className="flex flex-wrap gap-2">
         {claims.map((order) => {
-          const items = JSON.parse(order.items_json) as Array<{ title: string }>;
-          const firstItem = items[0]?.title ?? "Sin título";
+          const firstItem = order.items?.[0]?.title ?? "Sin título";
           return (
             <a
               key={order.id}

@@ -65,13 +65,22 @@ interface MlOrderDetail {
   tags?: string[];
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function parseMlDateToMs(iso: string | undefined): number | undefined {
   if (!iso) return undefined;
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? undefined : ms;
 }
 
-function mapOrder(detail: MlOrderDetail): Omit<Order, "synced_at"> {
+type UpsertableOrder = Omit<Order, "synced_at" | "claim_status"> & {
+  /** undefined = do not touch the existing claim_status on upsert */
+  claim_status?: "opened" | "closed" | null | undefined;
+};
+
+function mapOrder(detail: MlOrderDetail): UpsertableOrder {
   const items: OrderItem[] = detail.order_items.map((oi) => ({
     id: oi.item.id,
     title: oi.item.title,
@@ -127,7 +136,7 @@ function mapOrder(detail: MlOrderDetail): Omit<Order, "synced_at"> {
     tags,
     listing_type_id: listingTypeId,
     sale_fee: detail.sale_fee ?? null,
-    claim_status: null,
+    claim_status: undefined,
   };
 }
 
@@ -136,7 +145,12 @@ function mapOrder(detail: MlOrderDetail): Omit<Order, "synced_at"> {
  * Always re-fetches all orders in the lookback window to catch status changes
  * (cancellations, confirmations, etc.). Returns the number of orders processed.
  */
-export async function syncRecentOrders(days = 30, pageLimit = 50, syncShipments = false): Promise<number> {
+export async function syncRecentOrders(
+  days = 30,
+  pageLimit = 50,
+  syncShipments = false,
+  syncClaims = false
+): Promise<number> {
   const creds = await getCredentials();
   if (!creds) throw new NotAuthenticatedError();
 
@@ -188,12 +202,17 @@ export async function syncRecentOrders(days = 30, pageLimit = 50, syncShipments 
             await clearOrderGain(batch[j].id);
           }
 
-          if (syncShipments) {
-            const claimStatus = await getOrderClaimStatus(batch[j].id);
-            if (claimStatus !== null) {
+          if (syncShipments || syncClaims) {
+            if (syncClaims) {
+              const claimStatus = await getOrderClaimStatus(batch[j].id);
               await updateOrderClaimStatus(batch[j].id, claimStatus);
+              if (claimStatus !== null) {
+                await clearOrderGain(batch[j].id);
+              }
+              // Be nice to the ML claims API rate limits
+              await sleep(100);
             }
-            if (detail.tags?.includes("paid") || detail.status === "paid") {
+            if (syncShipments && (detail.tags?.includes("paid") || detail.status === "paid")) {
               await syncShipmentsForOrder(batch[j].id);
             }
           }

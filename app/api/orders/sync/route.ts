@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncRecentOrders } from "@/lib/ml/orders";
+import { runSyncClaims } from "@/worker/sync-claims";
 import { NotAuthenticatedError } from "@/lib/ml/auth";
 import { MercadoLibreApiError } from "@/lib/ml/client";
 import { logSyncFinish, logSyncStart } from "@/lib/db";
@@ -15,6 +16,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const daysParam = url.searchParams.get("days");
   const days = daysParam ? Math.min(parseInt(daysParam, 10) || 1, 90) : 1;
   const syncShipments = url.searchParams.get("syncShipments") === "true";
+  const syncClaims = url.searchParams.get("syncClaims") === "true";
 
   let logId: number | null = null;
   try {
@@ -29,13 +31,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const timeout = setTimeout(() => ac.abort(), 25_000);
 
     const processed = await Promise.race([
-      syncRecentOrders(days, 50, syncShipments),
+      syncRecentOrders(days, 50, syncShipments, syncClaims),
       new Promise<never>((_, reject) =>
         req.signal.addEventListener("abort", () => reject(new Error("Request aborted")))
       ),
     ]).finally(() => clearTimeout(timeout));
 
     if (logId !== null) await logSyncFinish(logId, "success", processed).catch(() => {});
+
+    // Refresh claims after orders unless the caller already requested inline claim sync.
+    if (!syncClaims) {
+      await runSyncClaims();
+    }
 
     // Broadcast so all connected frontends refresh immediately
     broadcast("order:updated", { source: "sync-api" });

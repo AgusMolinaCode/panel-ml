@@ -430,7 +430,7 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
                 <SelectItem value="all">Todos los estados</SelectItem>
                 {ALL_STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>
-                    {s}
+                    {translateStatus(s)}
                   </SelectItem>
                 ))}
               </SelectContent>

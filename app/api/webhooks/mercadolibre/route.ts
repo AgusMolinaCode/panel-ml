@@ -69,7 +69,12 @@ function parseMlDateToMs(iso: string | undefined): number | undefined {
   return Number.isNaN(ms) ? undefined : ms;
 }
 
-function mapOrder(detail: MlOrderDetail): Omit<Order, "synced_at"> {
+type UpsertableOrder = Omit<Order, "synced_at" | "claim_status"> & {
+  /** undefined = do not touch the existing claim_status on upsert */
+  claim_status?: "opened" | "closed" | null | undefined;
+};
+
+function mapOrder(detail: MlOrderDetail): UpsertableOrder {
   const items: OrderItem[] = detail.order_items.map((oi) => ({
     id: oi.item.id,
     title: oi.item.title,
@@ -121,7 +126,7 @@ function mapOrder(detail: MlOrderDetail): Omit<Order, "synced_at"> {
     tags: detail.tags ?? [],
     listing_type_id: detail.order_items[0]?.listing_type_id ?? null,
     sale_fee: detail.sale_fee ?? null,
-    claim_status: null,
+    claim_status: undefined,
   };
 }
 
@@ -187,8 +192,8 @@ async function syncOrder(orderId: number): Promise<void> {
   }
 
   const claimStatus = await getOrderClaimStatus(orderId);
+  await updateOrderClaimStatus(orderId, claimStatus);
   if (claimStatus !== null) {
-    await updateOrderClaimStatus(orderId, claimStatus);
     // Claim found: clear any stored gain since the order is disputed
     await clearOrderGain(orderId);
   }

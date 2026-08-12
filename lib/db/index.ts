@@ -74,9 +74,11 @@ function rowToOrder(row: RawOrderRow): Order {
   }
 }
 
-export async function upsertOrder(order: Omit<Order, 'synced_at'>): Promise<void> {
+export async function upsertOrder(
+  order: Omit<Order, 'synced_at' | 'claim_status'> & { claim_status?: 'opened' | 'closed' | null | undefined }
+): Promise<void> {
   const supabase = getSupabase()
-  await supabase.from('orders').upsert({
+  const upsertData: Record<string, unknown> = {
     id: order.id,
     status: order.status,
     status_detail: order.status_detail ?? null,
@@ -93,10 +95,15 @@ export async function upsertOrder(order: Omit<Order, 'synced_at'>): Promise<void
     tags_json: JSON.stringify(order.tags ?? []),
     listing_type_id: order.listing_type_id ?? null,
     sale_fee: order.sale_fee ?? null,
-    claim_status: order.claim_status ?? null,
     raw_json: JSON.stringify(order),
     synced_at: Date.now(),
-  }, {
+  }
+  // Only touch claim_status when explicitly provided. This prevents order syncs
+  // from wiping a claim status that was set by the dedicated claims sync.
+  if (order.claim_status !== undefined) {
+    upsertData.claim_status = order.claim_status
+  }
+  await supabase.from('orders').upsert(upsertData as Omit<Order, 'synced_at'>, {
     onConflict: 'id'
   })
 }

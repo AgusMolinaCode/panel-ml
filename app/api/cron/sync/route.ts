@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runSyncOrders } from "@/lib/ml/orders";
+import { syncRecentOrders } from "@/lib/ml/orders";
 import { runSyncClaims } from "@/worker/sync-claims";
 import { runRefreshCheck } from "@/worker/refresh-check";
 import { logSyncFinish, logSyncStart, clearGainsForOrdersWithClaims } from "@/lib/db";
@@ -45,7 +45,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   let ordersLogId: number | null = null;
   try {
     ordersLogId = await logSyncStart("cron.sync-orders");
-    const processed = await runSyncOrders(90);
+    const processed = await syncRecentOrders(90);
     await logSyncFinish(ordersLogId, "success", processed);
     results.push(`sync-orders: ${processed} orders`);
   } catch (err) {

@@ -6,7 +6,7 @@
 type Job = {
   name: string;
   intervalMs: number;
-  run: () => Promise<void>;
+  run: () => Promise<unknown>;
 };
 
 const jobs: Job[] = [];

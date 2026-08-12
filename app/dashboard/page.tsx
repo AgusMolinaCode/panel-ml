@@ -81,7 +81,7 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
 
       {/* Open claims banner — always shows all open claims from last 3 months */}
       <OpenClaimsBanner />
-      
+
 
       {/* Orders table */}
       <div className="mt-6 animate-fade-in-up">

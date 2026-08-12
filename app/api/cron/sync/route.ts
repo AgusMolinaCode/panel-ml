@@ -58,9 +58,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   let claimsLogId: number | null = null;
   try {
     claimsLogId = await logSyncStart("cron.sync-claims");
-    await runSyncClaims();
-    await logSyncFinish(claimsLogId, "success", 0);
-    results.push("sync-claims: ok");
+    const { checked, withClaims } = await runSyncClaims();
+    await logSyncFinish(claimsLogId, "success", checked);
+    results.push(`sync-claims: ${checked} checked, ${withClaims} with claims`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (claimsLogId !== null) await logSyncFinish(claimsLogId, "error", 0, msg).catch(() => {});

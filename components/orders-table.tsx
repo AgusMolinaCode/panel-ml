@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUpDown, ArrowUp, ArrowDown, Download, Loader2, RefreshCw, FileSpreadsheet, FileText, Copy, ExternalLink, Check, AlertTriangle } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Download, Loader2, RefreshCw, FileSpreadsheet, FileText, Copy, ExternalLink, Check } from "lucide-react";
 import { startOfDay, endOfDay, subDays, startOfMonth, subMonths } from "date-fns";
 import { Button } from "./ui/button";
 import { Card, CardBody, CardHeader } from "./ui/card";
@@ -105,7 +105,6 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   const [data, setData] = React.useState<OrdersResult | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [openClaims, setOpenClaims] = React.useState<Order[]>([]);
   const [offset, setOffset] = React.useState(0);
   const [sortBy, setSortBy] = React.useState<SortBy>("date_created");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
@@ -137,24 +136,6 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   const fetchGenRef = React.useRef(0);
   const searchRef = React.useRef(search);
   searchRef.current = search;
-
-  const fetchOpenClaims = React.useCallback(async (): Promise<void> => {
-    try {
-      const params = new URLSearchParams({
-        claim_status: "opened",
-        from: "0",
-        to: String(Date.now()),
-        limit: "500",
-        offset: "0",
-      });
-      const res = await fetch(`/api/orders?${params.toString()}`);
-      const json = (await res.json()) as OrdersResult & { error?: string };
-      if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`);
-      setOpenClaims(json.orders);
-    } catch (err) {
-      console.error("Failed to load open claims:", err);
-    }
-  }, []);
 
   const fetchData = React.useCallback(async (): Promise<void> => {
     const gen = ++fetchGenRef.current;
@@ -228,10 +209,9 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     setOffset(0);
   }, [fromMs, toMs, statusFilter, sortBy, sortDir]);
 
-  // Initial data load on mount: fetch orders and all open claims (ignore date range)
+  // Initial data load on mount: fetch only (no sync)
   React.useEffect(() => {
     void fetchData();
-    void fetchOpenClaims();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -239,15 +219,6 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
   React.useEffect(() => {
     void fetchData();
   }, [fetchData]);
-
-  // Refresh open claims whenever the global refresh fires (after sync, SSE, etc.)
-  React.useEffect(() => {
-    const handler = (): void => {
-      void fetchOpenClaims();
-    };
-    window.addEventListener("panel-ml:global-refresh", handler);
-    return () => window.removeEventListener("panel-ml:global-refresh", handler);
-  }, [fetchOpenClaims]);
 
   // Debounced search
   React.useEffect(() => {
@@ -363,30 +334,6 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
 
   return (
     <>
-      {openClaims.length > 0 && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 mb-4 animate-fade-in-up">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
-            <span className="font-semibold text-destructive">
-              {openClaims.length} orden{openClaims.length === 1 ? "" : "es"} con reclamo abierto
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {openClaims.map((order) => (
-              <a
-                key={order.id}
-                href={`https://www.mercadolibre.com.ar/ventas/omni/listado?filters=&startPeriod=&subFilters=&search=${order.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
-              >
-                #{order.id}
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
       <Card>
         <CardHeader
           title="Órdenes"

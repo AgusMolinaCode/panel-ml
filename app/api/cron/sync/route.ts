@@ -41,11 +41,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     errors.push(`refresh-check: ${msg}`);
   }
 
-  // Sync orders (last 90 days)
+  // Sync orders (last 7 days — keeps total runtime under Vercel Hobby's 10s serverless timeout)
   let ordersLogId: number | null = null;
   try {
     ordersLogId = await logSyncStart("cron.sync-orders");
-    const processed = await syncRecentOrders(90);
+    const processed = await syncRecentOrders(7);
     await logSyncFinish(ordersLogId, "success", processed);
     results.push(`sync-orders: ${processed} orders`);
   } catch (err) {

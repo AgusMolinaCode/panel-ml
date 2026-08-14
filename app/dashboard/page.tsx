@@ -84,7 +84,7 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
 
 
       {/* Orders table */}
-      <div className="mt-4 animate-fade-in-up">
+      <div className="mt-2 animate-fade-in-up">
         <SectionHeader
           icon={<ShoppingCart className="h-4 w-4" />}
           title="Detalle"

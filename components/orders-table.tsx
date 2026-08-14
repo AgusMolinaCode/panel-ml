@@ -228,11 +228,11 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     return () => clearTimeout(timer);
   }, [search, fetchData]);
 
-  // Auto-sync every 10 minutes
+  // Auto-sync every 5 minutes while the tab is open
   React.useEffect(() => {
     const interval = setInterval(() => {
       if (!syncingRef.current) void handleSync();
-    }, 10 * 60 * 1000);
+    }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [handleSync]);
 

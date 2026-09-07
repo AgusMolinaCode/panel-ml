@@ -251,7 +251,7 @@ export function MonthlyGainsGrid() {
     };
   }, [fromMs, toMs, refreshKey]);
 
-  if (loading) {
+  if (loading && gains.length === 0) {
     return (
       <div className="flex gap-4 overflow-hidden">
         {[1, 2, 3].map((i) => (

@@ -32,7 +32,7 @@ export const COURIER_USD_PER_KG = 18;
 export const DEFAULT_ML_FEE_PCT = 21;
 
 /** Envío ML por defecto a cargo del vendedor (ARS) */
-export const DEFAULT_ML_ENVIO = 7000;
+export const DEFAULT_ML_ENVIO = 10000;
 
 export const IVA_RATE = 0.21;
 export const PERCEPCION_IVA_RATE = 0.01;

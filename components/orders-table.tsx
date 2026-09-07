@@ -228,31 +228,32 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
     return () => clearTimeout(timer);
   }, [search, fetchData]);
 
-  // Auto-sync every 5 minutes while the tab is open
+  // Refetch DB every 30s — new orders already upserted by webhook/poll show up
+  // without kicking a 90-day ML sync (that belongs to the Sync button).
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (!syncingRef.current) void handleSync();
-    }, 5 * 60 * 1000);
+      void fetchData();
+    }, 30_000);
     return () => clearInterval(interval);
-  }, [handleSync]);
+  }, [fetchData]);
 
-  // Re-sync on tab focus
+  // Refetch when the tab becomes visible again
   React.useEffect(() => {
     const onFocus = (): void => {
-      if (!syncingRef.current) void handleSync();
+      if (document.visibilityState === "visible") void fetchData();
     };
     document.addEventListener("visibilitychange", onFocus);
     return () => document.removeEventListener("visibilitychange", onFocus);
-  }, [handleSync]);
+  }, [fetchData]);
 
-  // Listen for global refresh event from DashboardClient
+  // Global refresh = UI refetch, not another 90-day sync
   React.useEffect(() => {
     const handler = (): void => {
-      if (!syncingRef.current) void handleSync();
+      void fetchData();
     };
     window.addEventListener("panel-ml:global-refresh", handler);
     return () => window.removeEventListener("panel-ml:global-refresh", handler);
-  }, [handleSync]);
+  }, [fetchData]);
 
   // Fast-refresh costs when gain is saved from the modal (no full re-fetch)
   React.useEffect(() => {

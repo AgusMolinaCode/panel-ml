@@ -30,7 +30,7 @@ export const PERCEP_COMISION_RATE = 0.03;
 export const IIBB_RATE = 0.0025;
 
 /** Envío de ML a cargo del vendedor (ARS fijo por orden) */
-export const ENVIO_ML_ARS = 7000;
+export const ENVIO_ML_ARS = 10000;
 
 /** Conversión de libras a kilogramos */
 export const LBS_TO_KG = 0.453592;

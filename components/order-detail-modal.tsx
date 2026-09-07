@@ -24,6 +24,7 @@ import { formatMoney, formatDateTime, translateStatus } from "@/lib/format";
 import type { Order, OrderItem, OrderPayment, OrderShipping, OrderCost } from "@/lib/db/types";
 import {
   COURIER_USD_PER_KG,
+  DEFAULT_ML_ENVIO,
   DEFAULT_ML_FEE_PCT,
   DOLLAR_BLUE_DEFAULT,
   calcIibb,
@@ -45,7 +46,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const [costInput, setCostInput] = React.useState("0");
   const [feeInput, setFeeInput] = React.useState(String(DEFAULT_ML_FEE_PCT));
   
-  const [mlEnvioInput, setMlEnvioInput] = React.useState("7000");
+  const [mlEnvioInput, setMlEnvioInput] = React.useState(String(DEFAULT_ML_ENVIO));
   const [weightKgInput, setWeightKgInput] = React.useState("0.5");
   const [dollarOfficialInput, setDollarOfficialInput] = React.useState(String(DOLLAR_BLUE_DEFAULT));
   const [gainInput, setGainInput] = React.useState("");
@@ -106,7 +107,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
         setCostInput(data.cost ? String(data.cost.cost / dollar) : "0");
         setFeeInput(data.cost ? String(data.cost.ml_fee_pct) : String(DEFAULT_ML_FEE_PCT));
         setGainInput("");
-        setMlEnvioInput(data.cost?.ml_envio != null ? String(data.cost.ml_envio) : "7000");
+        setMlEnvioInput(data.cost?.ml_envio != null ? String(data.cost.ml_envio) : String(DEFAULT_ML_ENVIO));
         setWeightKgInput(data.cost?.weight_kg != null ? String(data.cost.weight_kg) : "0.5");
         setManualCostInput(data.cost?.manual_cost_input ?? "");
         if ((data.cost?.manual_cost_input ?? "") !== "") {
@@ -268,7 +269,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       setCostData(null);
       setCostInput("0");
       setFeeInput(String(DEFAULT_ML_FEE_PCT));
-      setMlEnvioInput("7000");
+      setMlEnvioInput(String(DEFAULT_ML_ENVIO));
       setWeightKgInput("0.5");
       setGainInput("");
       setManualCostInput("");

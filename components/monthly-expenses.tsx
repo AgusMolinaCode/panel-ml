@@ -6,6 +6,7 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 import { RepairsLog } from "./repairs-log";
 
 interface Expense {
@@ -87,6 +88,17 @@ export function MonthlyExpenses() {
   const [monthlyGain, setMonthlyGain] = React.useState<number | null>(null);
   const [repairIncome, setRepairIncome] = React.useState<number>(0);
   const [loading, setLoading] = React.useState(true);
+  const [refreshKey, setRefreshKey] = React.useState(0);
+
+  React.useEffect(() => {
+    const handler = (): void => setRefreshKey((k) => k + 1);
+    window.addEventListener("panel-ml:gains-changed", handler);
+    window.addEventListener(REFRESH_EVENT, handler);
+    return () => {
+      window.removeEventListener("panel-ml:gains-changed", handler);
+      window.removeEventListener(REFRESH_EVENT, handler);
+    };
+  }, []);
 
   const fetchExpenses = React.useCallback(async () => {
     const res = await fetch(`/api/expenses?month=${monthKey}`);
@@ -182,7 +194,7 @@ export function MonthlyExpenses() {
     return () => {
       cancelled = true;
     };
-  }, [fromMs, toMs, monthKey]);
+  }, [fromMs, toMs, monthKey, refreshKey]);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.monto, 0);
   const pocketMoney = (monthlyGain ?? 0) + repairIncome - totalExpenses;

@@ -81,15 +81,29 @@ export function DashboardClient({
     return () => clearInterval(interval);
   }, [globalRefresh]);
 
+  React.useEffect(() => {
+    const handler = (): void => {
+      void fetchStats();
+    };
+    window.addEventListener(REFRESH_EVENT, handler);
+    window.addEventListener("panel-ml:gains-changed", handler);
+    return () => {
+      window.removeEventListener(REFRESH_EVENT, handler);
+      window.removeEventListener("panel-ml:gains-changed", handler);
+    };
+  }, [fetchStats]);
+
   // Real-time: SSE connection to /api/events
   React.useEffect(() => {
     let retryDelay = 1000;
     let disposed = false;
+    let es: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     function connect(): void {
       if (disposed) return;
 
-      const es = new EventSource("/api/events");
+      es = new EventSource("/api/events");
 
       es.addEventListener("order:updated", () => {
         if (!disposed) window.dispatchEvent(new Event(REFRESH_EVENT));
@@ -106,9 +120,8 @@ export function DashboardClient({
 
       es.onerror = () => {
         if (disposed) return;
-        es.close();
-        console.warn(`[SSE] Disconnected — retrying in ${retryDelay}ms`);
-        setTimeout(connect, retryDelay);
+        es?.close();
+        retryTimer = setTimeout(connect, retryDelay);
         retryDelay = Math.min(retryDelay * 2, 30_000); // Exponential backoff, max 30s
       };
     }
@@ -117,6 +130,8 @@ export function DashboardClient({
 
     return () => {
       disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      es?.close();
     };
   }, []);
 

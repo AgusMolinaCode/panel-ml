@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AlertTriangle, ExternalLink } from "lucide-react";
+import { REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 
 interface ClaimOrder {
   id: number;
@@ -16,17 +17,29 @@ export function OpenClaimsBanner(): React.ReactElement {
   const [claims, setClaims] = React.useState<ClaimOrder[]>([]);
   const [loading, setLoading] = React.useState(true);
 
-  React.useEffect(() => {
-    const threeMonthsAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
-
-    void fetch(`/api/orders?from=${threeMonthsAgo}&to=${Date.now()}&limit=500&claim_status=opened`)
-      .then((res) => res.json())
-      .then((data: { orders?: ClaimOrder[] }) => {
-        setClaims(data.orders ?? []);
-      })
-      .catch(() => setClaims([]))
-      .finally(() => setLoading(false));
+  const fetchClaims = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/claims/open", { cache: "no-store" });
+      const data = (await res.json()) as { orders?: ClaimOrder[] };
+      setClaims(data.orders ?? []);
+    } catch {
+      setClaims([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  React.useEffect(() => {
+    void fetchClaims();
+  }, [fetchClaims]);
+
+  React.useEffect(() => {
+    const handler = (): void => {
+      void fetchClaims();
+    };
+    window.addEventListener(REFRESH_EVENT, handler);
+    return () => window.removeEventListener(REFRESH_EVENT, handler);
+  }, [fetchClaims]);
 
   if (loading) {
     return (

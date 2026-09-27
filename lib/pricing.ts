@@ -8,7 +8,7 @@
  *
  *   neto_venta   = total / 1.21            (separamos el IVA débito → AFIP)
  *   ganancia     = neto_venta
- *                  − comisión ML           (sale_fee API, o % fallback = 21%)
+ *                  − comisión ML           (sale_fee API, o % fallback = 19%)
  *                  − percepción IVA 1%     (sobre neto)
  *                  − percepción s/comisión 3%
  *                  − IIBB 0.25%            (sobre neto)
@@ -28,11 +28,11 @@ export const DOLLAR_BLUE_DEFAULT = 1650;
 /** Costo courier por kg en USD (doc: SHIPPING_COST_PER_KG) */
 export const COURIER_USD_PER_KG = 18;
 
-/** Comisión ML fallback cuando la API no trae sale_fee: 21% (incluye cuotas, alineado con price.js) */
-export const DEFAULT_ML_FEE_PCT = 21;
+/** Comisión ML fallback cuando la API no trae sale_fee: 19% (default para compras nuevas) */
+export const DEFAULT_ML_FEE_PCT = 19;
 
 /** Envío ML por defecto a cargo del vendedor (ARS) */
-export const DEFAULT_ML_ENVIO = 10000;
+export const DEFAULT_ML_ENVIO = 8000;
 
 export const IVA_RATE = 0.21;
 export const PERCEPCION_IVA_RATE = 0.01;

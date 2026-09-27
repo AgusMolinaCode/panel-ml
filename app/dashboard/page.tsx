@@ -79,7 +79,7 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
         />
       </Suspense>
 
-      {/* Open claims banner — always shows all open claims from last 3 months */}
+      {/* Open claims banner — live ML search, all currently-open claims */}
       <OpenClaimsBanner />
 
 

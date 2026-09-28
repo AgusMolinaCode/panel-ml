@@ -6,6 +6,7 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { gainForOrder } from "@/lib/pricing";
 import { REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 import { RepairsLog } from "./repairs-log";
 
@@ -21,6 +22,7 @@ type Order = {
   sale_fee: number | null;
   status: string;
   date_created: number;
+  claim_status: string | null;
 };
 
 type CostData = {
@@ -29,6 +31,8 @@ type CostData = {
   gain: number | null;
   ml_envio: number | null;
   ml_fee_pct: number;
+  weight_kg: number | null;
+  dollar_rate: number | null;
 };
 
 const MONTH_NAMES: Record<string, string> = {
@@ -147,7 +151,7 @@ export function MonthlyExpenses() {
             limit: String(limit),
             offset: String(offset),
           });
-          for (const s of statuses) params.append("status", s);
+          params.set("status", statuses.join(","));
           const res = await fetch(`/api/orders?${params.toString()}`);
           const json = (await res.json()) as { orders: Order[]; total: number };
           if (!json.orders?.length) break;
@@ -166,23 +170,39 @@ export function MonthlyExpenses() {
         const costsRes = await fetch(`/api/orders/costs?ids=${orderIds.join(",")}`);
         const costsData = (await costsRes.json()) as Record<number, CostData>;
 
-        const monthGainMap = new Map<string, number>();
+        // El rango ya es exactamente el calendario del mes (local) → se suma
+        // directo, sin bucket por mes (el viejo bucket UTC filtraba órdenes de
+        // la madrugada ART al mes anterior). Mismas reglas que el grid:
+        // solo statuses revenue y reclamos abiertos excluidos.
+        let monthGain = 0;
         for (const order of allOrders) {
+          if (order.claim_status === "opened") continue;
+
           const cost = costsData[order.id];
           const totalAmount = Number(order.total_amount) || 0;
-          const saleFee = order.sale_fee ?? totalAmount * 0.19;
-          const envio = cost?.ml_envio ?? 0;
-          const iibb = totalAmount * 0.0025;
-          const netSale = totalAmount - saleFee - envio - iibb;
-          const calculatedGain = netSale - (cost?.cost ?? 0);
-          const gain = cost?.gain != null ? cost.gain : cost ? calculatedGain : null;
+          // Prioriza la ganancia guardada (manual o calculada al guardar).
+          // Si no hay: gainForOrder elige la fórmula según la fecha de la orden
+          // (era IVA vs legacy) — la MISMA fuente que el grid de ganancias y
+          // la tabla de órdenes. Antes había una fórmula legacy inline hardcodeada
+          // que submedía la ganancia en las órdenes post-1/ago/2026.
+          const gain = cost?.gain != null
+            ? cost.gain
+            : cost
+            ? gainForOrder(Number(order.date_created) || 0, {
+                totalAmount,
+                saleFee: order.sale_fee,
+                mlFeePct: cost.ml_fee_pct,
+                costARS: cost.cost,
+                mlEnvio: cost.ml_envio,
+                weightKg: cost.weight_kg,
+                dollarRate: cost.dollar_rate,
+              })
+            : null;
 
-          const monthStr = new Date(Number(order.date_created) || 0).toISOString().slice(0, 7);
-          if (!monthGainMap.has(monthStr)) monthGainMap.set(monthStr, 0);
-          if (gain != null) monthGainMap.set(monthStr, (monthGainMap.get(monthStr) ?? 0) + gain);
+          if (gain != null) monthGain += gain;
         }
 
-        if (!cancelled) setMonthlyGain(monthGainMap.get(monthKey) ?? 0);
+        if (!cancelled) setMonthlyGain(monthGain);
       } catch (err) {
         console.error("Failed to load monthly gain:", err);
         if (!cancelled) setMonthlyGain(0);

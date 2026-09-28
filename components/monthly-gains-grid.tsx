@@ -1,33 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
-import { startOfDay, endOfDay, subDays, startOfMonth, subMonths } from "date-fns";
+import { endOfDay } from "date-fns";
 import { Card } from "./ui/card";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { REFRESH_EVENT } from "@/lib/contexts/refresh-context";
 import { formatMoney } from "@/lib/format";
 import { gainForOrder } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
-
-export type RangeMode = "day" | "week" | "month" | "2months" | "3months";
-
-export function getRangeFromMode(mode: RangeMode): { fromMs: number; toMs: number } {
-  const now = new Date();
-  const toMs = endOfDay(now).getTime();
-  switch (mode) {
-    case "day":
-      return { fromMs: startOfDay(now).getTime(), toMs };
-    case "week":
-      return { fromMs: startOfDay(subDays(now, 6)).getTime(), toMs };
-    case "month":
-      return { fromMs: startOfMonth(startOfMonth(now)).getTime(), toMs };
-    case "2months":
-      return { fromMs: startOfMonth(subMonths(startOfMonth(now), 1)).getTime(), toMs };
-    case "3months":
-      return { fromMs: startOfMonth(subMonths(startOfMonth(now), 2)).getTime(), toMs };
-  }
-}
 
 interface MonthlyGain {
   month: string;
@@ -43,6 +23,7 @@ type Order = {
   sale_fee: number | null;
   status: string;
   date_created: number;
+  claim_status: string | null;
 };
 
 type CostData = {
@@ -139,11 +120,6 @@ function MonthCard({ gain, currency }: MonthCardProps) {
 }
 
 export function MonthlyGainsGrid() {
-  const searchParams = useSearchParams();
-  const modeFromUrl = searchParams.get("range") as RangeMode | null;
-  const activeMode: RangeMode = modeFromUrl ?? "month";
-  const { fromMs, toMs } = getRangeFromMode(activeMode);
-
   const [gains, setGains] = React.useState<MonthlyGain[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -164,11 +140,18 @@ export function MonthlyGainsGrid() {
 
     void (async () => {
       try {
-        // Fetch ALL orders for the date range (batched, no pagination limit)
+        // Cards de MESES COMPLETOS (últimos 3 calendarios) — NO dependen del
+        // selector de rango del dashboard. Una card "Septiembre" siempre suma
+        // todo septiembre, esté el filtro en día, semana o 3 meses.
+        const now = new Date();
+        const fromMs = new Date(now.getFullYear(), now.getMonth() - 2, 1).getTime();
+        const toMs = endOfDay(now).getTime();
+
+        // Solo estados revenue: canceladas/pendientes de pago no son ganancia.
+        const statuses = ["paid", "confirmed", "partially_paid"];
         const allOrders: Order[] = [];
         let offset = 0;
         const limit = 100;
-        const statuses = ["paid", "confirmed", "partially_paid"];
 
         while (!cancelled) {
           const params = new URLSearchParams({
@@ -177,7 +160,7 @@ export function MonthlyGainsGrid() {
             limit: String(limit),
             offset: String(offset),
           });
-          for (const s of statuses) params.append("status", s);
+          params.set("status", statuses.join(","));
           const res = await fetch(`/api/orders?${params.toString()}`);
           const json = (await res.json()) as { orders: Order[]; total: number };
           if (!json.orders?.length) break;
@@ -197,10 +180,13 @@ export function MonthlyGainsGrid() {
         const costsRes = await fetch(`/api/orders/costs?ids=${orderIds.join(",")}`);
         const costsData = (await costsRes.json()) as Record<number, CostData>;
 
-        // Group orders by month and compute gains (same formula as orders-table)
+        // Group orders by LOCAL month and compute gains (same formula as orders-table)
         const monthMap = new Map<string, MonthlyGain>();
 
         for (const order of allOrders) {
+          // Reclamo abierto: la plata está en disputa, no va en la ganancia.
+          if (order.claim_status === "opened") continue;
+
           const cost = costsData[order.id];
           const totalAmount = Number(order.total_amount) || 0;
           // Ganancia manual prioriza. Si no: fórmula nueva desde ago-2026
@@ -219,7 +205,9 @@ export function MonthlyGainsGrid() {
               })
             : null;
 
-          const monthStr = new Date(Number(order.date_created) || 0).toISOString().slice(0, 7);
+          // Bucket por mes LOCAL (no UTC: medianoche ART = día anterior en UTC)
+          const d = new Date(Number(order.date_created) || 0);
+          const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
           if (!monthMap.has(monthStr)) {
             monthMap.set(monthStr, {
               month: monthStr,
@@ -249,7 +237,7 @@ export function MonthlyGainsGrid() {
     return () => {
       cancelled = true;
     };
-  }, [fromMs, toMs, refreshKey]);
+  }, [refreshKey]);
 
   if (loading && gains.length === 0) {
     return (

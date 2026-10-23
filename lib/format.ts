@@ -63,3 +63,18 @@ const STATUS_LABELS_ES: Record<string, string> = {
 export function translateStatus(status: string): string {
   return STATUS_LABELS_ES[status.toLowerCase()] ?? status;
 }
+
+/**
+ * SKU → valor para el clipboard. Los prefijos internos de catálogo (RM-, EB-,
+ * NI-) se quitan al COPIAR: "RM-1930470002" se copia como "1930470002".
+ * La UI sigue mostrando el SKU completo; esto solo afecta el pegado.
+ */
+const SKU_COPY_PREFIXES = ["RM-", "EB-", "NI-"];
+
+export function skuForClipboard(sku: string): string {
+  const upper = sku.toUpperCase();
+  for (const prefix of SKU_COPY_PREFIXES) {
+    if (upper.startsWith(prefix)) return sku.slice(prefix.length);
+  }
+  return sku;
+}

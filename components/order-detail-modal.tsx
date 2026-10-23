@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Table, THead, TBody, TR, TH, TD } from "./ui/table";
-import { formatMoney, formatDateTime, translateStatus } from "@/lib/format";
+import { formatMoney, formatDateTime, translateStatus, skuForClipboard } from "@/lib/format";
 import type { Order, OrderItem, OrderPayment, OrderShipping, OrderCost } from "@/lib/db/types";
 import {
   COURIER_USD_PER_KG,
@@ -47,7 +47,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
   const [feeInput, setFeeInput] = React.useState(String(DEFAULT_ML_FEE_PCT));
   
   const [mlEnvioInput, setMlEnvioInput] = React.useState(String(DEFAULT_ML_ENVIO));
-  const [weightKgInput, setWeightKgInput] = React.useState("0.5");
+  const [weightKgInput, setWeightKgInput] = React.useState("0.1");
   const [dollarOfficialInput, setDollarOfficialInput] = React.useState(String(DOLLAR_BLUE_DEFAULT));
   const [gainInput, setGainInput] = React.useState("");
   const [manualCostInput, setManualCostInput] = React.useState("");
@@ -108,7 +108,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
         setFeeInput(data.cost ? String(data.cost.ml_fee_pct) : String(DEFAULT_ML_FEE_PCT));
         setGainInput("");
         setMlEnvioInput(data.cost?.ml_envio != null ? String(data.cost.ml_envio) : String(DEFAULT_ML_ENVIO));
-        setWeightKgInput(data.cost?.weight_kg != null ? String(data.cost.weight_kg) : "0.5");
+        setWeightKgInput(data.cost?.weight_kg != null ? String(data.cost.weight_kg) : "0.1");
         setManualCostInput(data.cost?.manual_cost_input ?? "");
         if ((data.cost?.manual_cost_input ?? "") !== "") {
           setCostMode("manual");
@@ -270,7 +270,7 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
       setCostInput("0");
       setFeeInput(String(DEFAULT_ML_FEE_PCT));
       setMlEnvioInput(String(DEFAULT_ML_ENVIO));
-      setWeightKgInput("0.5");
+      setWeightKgInput("0.1");
       setGainInput("");
       setManualCostInput("");
       setCostMode(null);
@@ -299,7 +299,8 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                 <button
                   type="button"
                   onClick={() => {
-                    const skus = order.items.map((i) => i.seller_sku).filter(Boolean).join(", ");
+                    // Se copia sin prefijos RM-/EB-/NI-
+                    const skus = (order.items.map((i) => i.seller_sku).filter(Boolean) as string[]).map(skuForClipboard).join(", ");
                     void navigator.clipboard.writeText(skus).then(() => {
                       setCopiedSku(true);
                       setTimeout(() => setCopiedSku(false), 1500);
@@ -363,6 +364,10 @@ export function OrderDetailModal({ order, open, onOpenChange }: Props) {
                     step="any"
                     min="0"
                     value={costInput}
+                    onFocus={() => {
+                      // El 0 de default se va solo al empezar a tipear
+                      if (costInput === "0") setCostInput("");
+                    }}
                     onChange={(e) => {
                       if (e.target.value === "" || e.target.value === "0") {
                         setCostMode(null);

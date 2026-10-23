@@ -17,7 +17,7 @@ import {
 } from "./ui/select";
 import { Input } from "./ui/input";
 import { OrderDetailModal } from "./order-detail-modal";
-import { formatMoney, formatDateTime, translateStatus } from "@/lib/format";
+import { formatMoney, formatDateTime, translateStatus, skuForClipboard } from "@/lib/format";
 import { calcMlNeto, gainForOrder, isIvaEra } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import type { Order } from "@/lib/db/types";
@@ -606,7 +606,9 @@ export function OrdersTable({ fromMs: propFromMs, toMs: propToMs }: Props) {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  void navigator.clipboard.writeText(allSkusStr).then(() => {
+                                  // Se copia sin prefijos RM-/EB-/NI- (title sigue mostrando el SKU completo)
+                                  const copyValue = skus.map(skuForClipboard).join(", ");
+                                  void navigator.clipboard.writeText(copyValue).then(() => {
                                     setCopiedSkus((prev) => new Set(prev).add(firstSku));
                                     setTimeout(() => {
                                       setCopiedSkus((prev) => {
